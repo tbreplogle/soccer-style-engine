@@ -18,6 +18,7 @@ from src.features.team_aggregates import build_all_team_style_profiles, build_te
 from src.models.backtest import run_backtest
 from src.models.current_backtest import run_current_backtest
 from src.models.current_score_projection import project_current_match
+from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
 from src.reports.real_data_validation import run_real_data_validation
 
@@ -90,12 +91,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--league")
     p.add_argument("--neutral-site", action="store_true")
     p.add_argument("--output", default="outputs/projections/current_match_projection.csv")
+    p.add_argument("--enable-proxy-adjustments", action="store_true")
+    p.add_argument("--proxy-cap", type=float)
 
     p = sub.add_parser("backtest-current")
     p.add_argument("--input", required=True)
     p.add_argument("--start-date", required=True)
     p.add_argument("--end-date", required=True)
     p.add_argument("--output-dir", default="outputs/reports")
+
+    p = sub.add_parser("diagnose-proxies")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--caps", default="0,0.03,0.05,0.08,0.12,0.20")
+    p.add_argument("--min-matches", type=int, default=6)
+    p.add_argument("--include-window-breakdowns", action="store_true")
 
     return parser
 
@@ -171,6 +183,8 @@ def main(argv: list[str] | None = None) -> None:
             league=args.league,
             neutral_site=args.neutral_site,
             output_path=args.output,
+            enable_proxy_adjustments=args.enable_proxy_adjustments,
+            proxy_total_cap=args.proxy_cap,
         )
         print(result.to_string(index=False))
     elif args.command == "backtest-current":
@@ -181,6 +195,18 @@ def main(argv: list[str] | None = None) -> None:
             output_dir=args.output_dir,
         )
         print(result["summary"])
+    elif args.command == "diagnose-proxies":
+        caps = [float(x) for x in args.caps.split(",") if x.strip()]
+        result = run_proxy_diagnostics(
+            args.input,
+            args.start_date,
+            args.end_date,
+            caps=caps,
+            min_matches=args.min_matches,
+            output_dir=args.output_dir,
+            include_breakdowns=args.include_window_breakdowns,
+        )
+        print(result["report"])
 
 
 if __name__ == "__main__":
