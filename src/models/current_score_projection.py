@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 
 from src.features.free_style_proxies import build_free_style_proxies
-from src.models.current_baseline import current_baseline_expected_goals
+from src.models.market_baseline import estimate_current_baseline_xg
 from src.models.score_projection import _projection_from_xg
 
 INDIVIDUAL_PROXY_ADJUSTMENT_CAP = 0.08
@@ -74,11 +74,12 @@ def project_current_match(
     enable_proxy_adjustments: bool = False,
     proxy_total_cap: float | None = None,
     enabled_proxy_groups: set[str] | list[str] | None = None,
+    baseline_mode: str = "blended",
 ) -> pd.DataFrame:
     data = matches.copy() if isinstance(matches, pd.DataFrame) else pd.read_csv(matches)
     if league:
         data = data[data["league"].eq(league)]
-    baseline = current_baseline_expected_goals(data, home_team, away_team, as_of_date, neutral_site=neutral_site)
+    baseline = estimate_current_baseline_xg(data, home_team, away_team, as_of_date, baseline_mode=baseline_mode, neutral_site=neutral_site)
     proxies = build_free_style_proxies(data, as_of_date)
     lookup = proxies.set_index("team")
     home = lookup.loc[home_team] if home_team in lookup.index else pd.Series({"recent_matches_used": 0})
@@ -102,6 +103,7 @@ def project_current_match(
         "away_team": away_team,
         "home_xg_base": baseline["home_xg_base"],
         "away_xg_base": baseline["away_xg_base"],
+        "baseline_mode": baseline["baseline_mode"],
         "home_xg_proxy_adjustment": home_adj,
         "away_xg_proxy_adjustment": away_adj,
         "home_xg_final": round(home_final, 4),
