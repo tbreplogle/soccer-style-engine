@@ -77,7 +77,7 @@ def test_raw_data_is_not_tracked_except_gitkeep():
         check=True,
     ).stdout.splitlines()
 
-    assert tracked in ([], ["data/raw/.gitkeep"])
+    assert set(tracked).issubset({"data/raw/.gitkeep", "data/raw/football-data/.gitkeep"})
 
 
 def test_list_available_real_data_sample():
