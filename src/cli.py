@@ -11,6 +11,7 @@ from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
+from src.data_ingestion.international_data import build_international_match_dataset, list_international_competitions
 from src.data_ingestion.multi_league_football_data import download_football_data_leagues, normalize_multi_league_football_data
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
 from src.features.event_features import build_team_match_style_log
@@ -20,6 +21,8 @@ from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
 from src.models.current_score_projection import project_current_match
+from src.models.international_backtest import run_international_backtest
+from src.models.international_projection import project_international_match
 from src.models.international_readiness import audit_international_readiness
 from src.models.multi_league_diagnostics import run_multi_league_profile_diagnostics
 from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
@@ -157,6 +160,37 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("audit-international-readiness")
     p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
     p.add_argument("--output-dir", default="outputs/reports")
+
+    p = sub.add_parser("list-international-competitions")
+    p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
+
+    p = sub.add_parser("build-international-dataset")
+    p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
+    p.add_argument("--output", default="data/processed/international_match_results.csv")
+    p.add_argument("--competition-name")
+    p.add_argument("--competition-id")
+    p.add_argument("--season-id")
+    p.add_argument("--max-matches", type=int)
+
+    p = sub.add_parser("project-international")
+    p.add_argument("--input", required=True)
+    p.add_argument("--team-a", required=True)
+    p.add_argument("--team-b", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--neutral-site", choices=["true", "false", "unknown"], default="unknown")
+    p.add_argument("--projection-profile", choices=["international_score_projection", "international_winner_probability", "international_total_goals", "international_event_style_context", "international_model_only"], default="international_score_projection")
+    p.add_argument("--competition-context", default="")
+    p.add_argument("--output", default="outputs/projections/international_match_projection.csv")
+
+    p = sub.add_parser("backtest-international")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--competition-name")
+    p.add_argument("--competition-id")
+    p.add_argument("--season-id")
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--min-prior-matches", type=int, default=5)
 
     return parser
 
@@ -296,6 +330,43 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "audit-international-readiness":
         result = audit_international_readiness(args.statsbomb_root, output_dir=args.output_dir)
         print(result["report"])
+    elif args.command == "list-international-competitions":
+        result = list_international_competitions(args.statsbomb_root)
+        print(result.to_string(index=False))
+    elif args.command == "build-international-dataset":
+        result = build_international_match_dataset(
+            statsbomb_root=args.statsbomb_root,
+            output_path=args.output,
+            competition_name=args.competition_name,
+            competition_id=args.competition_id,
+            season_id=args.season_id,
+            max_matches=args.max_matches,
+        )
+        print(f"Wrote {len(result)} international match rows to {args.output}")
+    elif args.command == "project-international":
+        result = project_international_match(
+            args.input,
+            args.team_a,
+            args.team_b,
+            args.as_of_date,
+            neutral_site=args.neutral_site,
+            projection_profile=args.projection_profile,
+            competition_context=args.competition_context,
+            output_path=args.output,
+        )
+        print(result.to_string(index=False))
+    elif args.command == "backtest-international":
+        result = run_international_backtest(
+            args.input,
+            args.start_date,
+            args.end_date,
+            competition_name=args.competition_name,
+            competition_id=args.competition_id,
+            season_id=args.season_id,
+            output_dir=args.output_dir,
+            min_prior_matches=args.min_prior_matches,
+        )
+        print(result["summary"])
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(
