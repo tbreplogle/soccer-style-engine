@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+data/processed/*
+!data/processed/.gitkeep
+outputs/projections/*
+!outputs/projections/.gitkeep
+outputs/reports/*
+!outputs/reports/.gitkeep

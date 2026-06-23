@@ -1,0 +1,12 @@
+[
+  {
+    "team_name": "Red FC",
+    "lineup": [{"player_name": "Synthetic Red 1"}],
+    "data_note": "SYNTHETIC TEST DATA - not real team projections"
+  },
+  {
+    "team_name": "Blue FC",
+    "lineup": [{"player_name": "Synthetic Blue 1"}],
+    "data_note": "SYNTHETIC TEST DATA - not real team projections"
+  }
+]

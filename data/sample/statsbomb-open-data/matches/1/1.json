@@ -1,0 +1,13 @@
+[
+  {
+    "match_id": 1001,
+    "match_date": "2026-01-01",
+    "competition": {"competition_name": "Synthetic Cup"},
+    "season": {"season_name": "Synthetic 2026"},
+    "home_team": {"home_team_name": "Red FC"},
+    "away_team": {"away_team_name": "Blue FC"},
+    "home_score": 2,
+    "away_score": 1,
+    "data_note": "SYNTHETIC TEST DATA - not real team projections"
+  }
+]
