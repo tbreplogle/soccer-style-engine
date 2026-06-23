@@ -14,6 +14,7 @@ from src.features.event_features import build_team_match_style_log
 from src.features.team_aggregates import build_all_team_style_profiles, build_team_style_profile
 from src.models.backtest import run_backtest
 from src.models.score_projection import project_match
+from src.reports.real_data_validation import run_real_data_validation
 
 
 def _print_json(payload: object) -> None:
@@ -57,6 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--end-date", required=True)
     p.add_argument("--style-log", default=str(TEAM_MATCH_STYLE_LOG_PATH))
 
+    p = sub.add_parser("validate-real-data")
+    p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data")
+    p.add_argument("--competition-id")
+    p.add_argument("--season-id")
+    p.add_argument("--max-matches", type=int, default=10)
+    p.add_argument("--output-dir", default="outputs/reports")
+
     return parser
 
 
@@ -90,6 +98,23 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "backtest":
         result = run_backtest(args.start_date, args.end_date, style_log=args.style_log)
         print(result["summary"])
+    elif args.command == "validate-real-data":
+        result = run_real_data_validation(
+            args.statsbomb_root,
+            competition_id=args.competition_id,
+            season_id=args.season_id,
+            max_matches=args.max_matches,
+            output_dir=args.output_dir,
+        )
+        quality = result["quality"].to_dict("records")
+        print(
+            "Real data validation complete: "
+            f"matches={len(result['matches'])}, "
+            f"team_match_rows={len(result['style_log'])}, "
+            f"quality_flags={quality}, "
+            f"warnings={len(result['sanity_warnings'])}, "
+            f"report={result['report_path']}"
+        )
 
 
 if __name__ == "__main__":
