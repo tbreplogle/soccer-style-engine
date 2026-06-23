@@ -1,0 +1,95 @@
+# Team Identity Agent Report
+
+This report describes how teams play. It is not a betting sheet.
+
+## Brazil
+**Identity:** Fast / Vertical Run Threat (51/100 style confidence)
+
+Brazil profiles as Fast / Vertical Run Threat: plays forward quickly, creates runs behind, and wants the game to open up.
+
+**Top style scores:** movement width=100.0; off ball run=100.0; verticality=96.2
+
+**Measured evidence:** sprints: 186 vs avg 142 (higher than dataset avg) | runs behind the line: 20 vs avg 12.4 (higher than dataset avg) | progressive passing: 40 vs avg 34 (higher than dataset avg) | fast attacks: 13.4 vs avg 7.95 (higher than dataset avg) | direct attack speed: 2.44 vs avg 1.71 (higher than dataset avg)
+
+**Human notes:** Wants the game open; dangerous when attacks become fast and runners can attack space. [human_seed; confidence=medium]
+
+**Strengths:** dangerous in transition, can punish high lines, and can create chances without long possession spells
+
+**Watchouts:** can become impatient against compact blocks and may give the ball away in bad spots
+
+**Best matchup type:** high-line or possession teams that leave transition lanes
+
+**Worst matchup type:** disciplined low blocks that deny space behind and force slower buildup
+
+**Recent shift:** Not enough matches to judge a trend yet. Treat identity as early sample.
+
+**Guardrail:** EARLY_SAMPLE: do not over-trust identity yet
+
+## Morocco
+**Identity:** Defensive Low Block (67/100 style confidence)
+
+Morocco profiles as Defensive Low Block: comfortable without the ball, protects dangerous areas, and tries to keep the game compact.
+
+**Top style scores:** low block=87.5; defensive resistance=67.5; tempo=48.8
+
+**Measured evidence:** possession share: 36 vs avg 50 (lower than dataset avg) | defensive block height: 33 vs avg 44 (lower than dataset avg) | pressing intensity PPDA: 18.5 vs avg 11.8 (higher than dataset avg) | opponent box touches allowed: 12.0 vs avg 9.88 (higher than dataset avg) | xG allowed: 0.67 vs avg 0.96 (lower than dataset avg)
+
+**Human notes:** Comfortable giving up possession if the defensive block stays compact and central areas are protected. [human_seed; confidence=medium]
+
+**Strengths:** can mute high-tempo opponents, shrink central space, and keep totals lower if concentration holds
+
+**Watchouts:** can get pinned deep, struggle to escape pressure, and concede if the block is stretched wide or forced to chase
+
+**Best matchup type:** reckless vertical teams that need space behind the line
+
+**Worst matchup type:** patient possession teams with wide switches and elite box occupation
+
+**Recent shift:** Not enough matches to judge a trend yet. Treat identity as early sample.
+
+**Guardrail:** EARLY_SAMPLE: do not over-trust identity yet
+
+## Netherlands
+**Identity:** Off-Ball Runner (54/100 style confidence)
+
+Netherlands profiles as Off-Ball Runner: creates value through movement, sprints, and runs behind/around the line.
+
+**Top style scores:** off ball run=75.0; tempo=71.2; verticality=68.8
+
+**Measured evidence:** sprints: 148 vs avg 142 (higher than dataset avg) | runs behind the line: 13.5 vs avg 12.4 (higher than dataset avg) | fast attacks: 8.95 vs avg 7.95 (higher than dataset avg)
+
+**Human notes:** Mixed profile in the sample; do not force a label until more matches are tracked. [human_seed; confidence=low]
+
+**Strengths:** can stretch compact teams and create blind-side danger
+
+**Watchouts:** needs service; movement is wasted if progression is poor
+
+**Best matchup type:** static back lines and teams that track runners poorly
+
+**Worst matchup type:** compact teams with disciplined runner tracking
+
+**Recent shift:** Not enough matches to judge a trend yet. Treat identity as early sample.
+
+**Guardrail:** EARLY_SAMPLE: do not over-trust identity yet
+
+## Spain
+**Identity:** Possession + High Press (51/100 style confidence)
+
+Spain profiles as Possession + High Press: controls the ball and tries to win it back high when possession is lost.
+
+**Top style scores:** control=100.0; territory=100.0; pressing=93.8
+
+**Measured evidence:** territory/field tilt: 68 vs avg 50 (higher than dataset avg) | possession share: 64 vs avg 50 (higher than dataset avg) | defensive block height: 54 vs avg 44 (higher than dataset avg) | possession length: 19.1 vs avg 12.3 (higher than dataset avg) | pressing intensity PPDA: 7.65 vs avg 11.8 (lower than dataset avg) | pass patience: 8.35 vs avg 5.24 (higher than dataset avg)
+
+**Human notes:** Can dominate the ball but must prove possession is creating dangerous territory, not just safe recycling. [human_seed; confidence=medium]
+
+**Strengths:** can suffocate weaker buildout teams and turn possession into territory
+
+**Watchouts:** can be exposed behind the press if the first wave gets broken
+
+**Best matchup type:** teams with weak buildup or sloppy midfield turnovers
+
+**Worst matchup type:** vertical teams with clean outlets behind the press
+
+**Recent shift:** Not enough matches to judge a trend yet. Treat identity as early sample.
+
+**Guardrail:** EARLY_SAMPLE: do not over-trust identity yet

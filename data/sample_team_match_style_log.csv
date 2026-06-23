@@ -1,0 +1,9 @@
+match_id,date,team,opponent,minutes,possession_pct,field_tilt_pct,avg_possession_seconds,passes_per_possession,central_progression_pct,direct_speed_mps,fast_attacks_per90,progressive_passes_per90,progressive_carries_per90,runs_in_behind_per90,avg_block_height,ppda,high_regains_per90,opponent_box_touches_allowed,xga_per90,avg_team_width,avg_team_depth,touch_x_mean,touch_y_spread,sprints_per90,goals_for,goals_against
+M001,2026-06-01,Morocco,Brazil,90,39,36,8.5,3.1,38,1.42,5.2,23,12,7,34,17.8,3.4,13,0.72,41,29,43,28,108,1,1
+M002,2026-06-08,Morocco,Spain,90,34,31,7.9,2.8,35,1.30,4.5,19,10,6,32,19.2,2.8,11,0.61,39,27,41,26,96,0,0
+M001,2026-06-01,Brazil,Morocco,90,61,64,13.2,5.8,44,2.35,12.8,39,28,19,48,8.4,8.2,7,1.05,52,43,58,39,181,1,1
+M003,2026-06-10,Brazil,Netherlands,90,55,59,11.6,5.1,42,2.52,14.1,41,31,22,51,9.2,7.5,9,1.18,54,44,60,41,190,3,2
+M002,2026-06-08,Spain,Morocco,90,66,69,19.8,8.6,57,1.22,4.0,44,20,8,55,7.5,6.8,6,0.74,49,36,63,35,129,0,0
+M004,2026-06-12,Spain,Netherlands,90,63,67,18.4,8.1,60,1.28,5.1,46,23,10,53,7.8,7.2,7,0.82,50,37,62,36,134,2,1
+M003,2026-06-10,Netherlands,Brazil,90,45,41,10.1,4.5,46,1.78,8.6,30,20,14,43,11.9,5.4,12,1.32,47,38,50,34,151,2,3
+M004,2026-06-12,Netherlands,Spain,90,37,33,8.8,3.9,43,1.83,9.3,27,17,13,40,12.8,4.9,14,1.21,46,35,47,33,145,1,2

@@ -1,0 +1,5 @@
+team,note,source,confidence,tags
+Morocco,"Comfortable giving up possession if the defensive block stays compact and central areas are protected.",human_seed,medium,"low_block,compact,transition"
+Brazil,"Wants the game open; dangerous when attacks become fast and runners can attack space.",human_seed,medium,"vertical,pace,runs"
+Spain,"Can dominate the ball but must prove possession is creating dangerous territory, not just safe recycling.",human_seed,medium,"possession,control,sterile_risk"
+Netherlands,"Mixed profile in the sample; do not force a label until more matches are tracked.",human_seed,low,"balanced,needs_data"
