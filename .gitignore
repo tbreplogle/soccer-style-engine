@@ -6,6 +6,11 @@ __pycache__/
 .DS_Store
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/football-data/
+data/raw/football-data/*
+!data/raw/football-data/.gitkeep
+data/current/*
+!data/current/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
 outputs/projections/*

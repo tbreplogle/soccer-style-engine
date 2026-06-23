@@ -6,13 +6,18 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.agents.free_proxy_matchup_agent import analyze_free_proxy_matchup
 from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
+from src.data_ingestion.football_data_current import normalize_current_inputs
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
 from src.features.event_features import build_team_match_style_log
+from src.features.free_style_proxies import build_free_style_proxies
 from src.features.team_aggregates import build_all_team_style_profiles, build_team_style_profile
 from src.models.backtest import run_backtest
+from src.models.current_backtest import run_current_backtest
+from src.models.current_score_projection import project_current_match
 from src.models.score_projection import project_match
 from src.reports.real_data_validation import run_real_data_validation
 
@@ -65,6 +70,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-matches", type=int, default=10)
     p.add_argument("--output-dir", default="outputs/reports")
 
+    p = sub.add_parser("normalize-football-data")
+    p.add_argument("--input")
+    p.add_argument("--csv-url")
+    p.add_argument("--output", required=True)
+    p.add_argument("--league", default="")
+    p.add_argument("--season", default="")
+
+    p = sub.add_parser("build-free-proxies")
+    p.add_argument("--input", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--output", default="data/processed/free_style_proxies.csv")
+
+    p = sub.add_parser("project-current")
+    p.add_argument("--input", required=True)
+    p.add_argument("--home", required=True)
+    p.add_argument("--away", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--league")
+    p.add_argument("--neutral-site", action="store_true")
+    p.add_argument("--output", default="outputs/projections/current_match_projection.csv")
+
+    p = sub.add_parser("backtest-current")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+
     return parser
 
 
@@ -115,6 +147,40 @@ def main(argv: list[str] | None = None) -> None:
             f"warnings={len(result['sanity_warnings'])}, "
             f"report={result['report_path']}"
         )
+    elif args.command == "normalize-football-data":
+        result = normalize_current_inputs(
+            input_path=args.input,
+            csv_url=args.csv_url,
+            output_path=args.output,
+            league=args.league,
+            season=args.season,
+        )
+        print(f"Wrote {len(result)} normalized current rows to {args.output}")
+    elif args.command == "build-free-proxies":
+        result = build_free_style_proxies(args.input, args.as_of_date)
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        result.to_csv(output, index=False)
+        print(f"Wrote {len(result)} free proxy rows to {args.output}")
+    elif args.command == "project-current":
+        result = project_current_match(
+            args.input,
+            args.home,
+            args.away,
+            args.as_of_date,
+            league=args.league,
+            neutral_site=args.neutral_site,
+            output_path=args.output,
+        )
+        print(result.to_string(index=False))
+    elif args.command == "backtest-current":
+        result = run_current_backtest(
+            args.input,
+            args.start_date,
+            args.end_date,
+            output_dir=args.output_dir,
+        )
+        print(result["summary"])
 
 
 if __name__ == "__main__":
