@@ -19,6 +19,7 @@ from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
 from src.models.current_score_projection import project_current_match
+from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
 from src.reports.real_data_validation import run_real_data_validation
@@ -94,7 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", default="outputs/projections/current_match_projection.csv")
     p.add_argument("--enable-proxy-adjustments", action="store_true")
     p.add_argument("--proxy-cap", type=float)
-    p.add_argument("--baseline-mode", choices=["goals", "shots", "market", "totals_market", "blended"], default="blended")
+    p.add_argument("--baseline-mode", choices=["goals", "shots", "market", "totals_market", "blended"])
+    p.add_argument("--projection-profile", choices=["score_projection", "winner_probability", "total_goals", "market_anchored", "model_only"], default="score_projection")
 
     p = sub.add_parser("backtest-current")
     p.add_argument("--input", required=True)
@@ -120,6 +122,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--monthly", action="store_true")
     p.add_argument("--baseline-modes", default="goals,shots,market,totals_market,blended")
     p.add_argument("--league")
+
+    p = sub.add_parser("diagnose-projection-profiles")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--min-matches", type=int, default=6)
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
 
     return parser
 
@@ -198,6 +208,7 @@ def main(argv: list[str] | None = None) -> None:
             enable_proxy_adjustments=args.enable_proxy_adjustments,
             proxy_total_cap=args.proxy_cap,
             baseline_mode=args.baseline_mode,
+            projection_profile=args.projection_profile,
         )
         print(result.to_string(index=False))
     elif args.command == "backtest-current":
@@ -218,6 +229,17 @@ def main(argv: list[str] | None = None) -> None:
             min_matches=args.min_matches,
             output_dir=args.output_dir,
             include_breakdowns=args.include_window_breakdowns,
+        )
+        print(result["report"])
+    elif args.command == "diagnose-projection-profiles":
+        profiles = [profile for profile in args.profiles.split(",") if profile.strip()]
+        result = run_projection_profile_diagnostics(
+            args.input,
+            args.start_date,
+            args.end_date,
+            profiles=profiles,
+            min_matches=args.min_matches,
+            output_dir=args.output_dir,
         )
         print(result["report"])
     elif args.command == "diagnose-baselines":

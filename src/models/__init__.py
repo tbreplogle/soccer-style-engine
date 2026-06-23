@@ -2,6 +2,14 @@ from .backtest import run_backtest
 from .baseline_diagnostics import run_baseline_diagnostics
 from .current_backtest import run_current_backtest
 from .current_score_projection import project_current_match
+from .projection_profile_diagnostics import run_projection_profile_diagnostics
 from .score_projection import project_match
 
-__all__ = ["project_current_match", "project_match", "run_backtest", "run_baseline_diagnostics", "run_current_backtest"]
+__all__ = [
+    "project_current_match",
+    "project_match",
+    "run_backtest",
+    "run_baseline_diagnostics",
+    "run_current_backtest",
+    "run_projection_profile_diagnostics",
+]

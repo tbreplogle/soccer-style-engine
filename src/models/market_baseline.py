@@ -229,15 +229,20 @@ def estimate_current_baseline_xg(
     baseline_mode: str = "blended",
     neutral_site: bool = False,
     blend_weights: dict[str, float] | None = None,
+    market_enabled: bool = True,
 ) -> dict[str, Any]:
     data = _load(matches)
     mode = baseline_mode if baseline_mode in BASELINE_MODES else "blended"
     components = {
         "goals": goals_baseline_xg(data, home_team, away_team, as_of_date, neutral_site=neutral_site),
         "shots": shots_baseline_xg(data, home_team, away_team, as_of_date),
-        "market": odds_implied_baseline_xg(data, home_team, away_team, as_of_date),
-        "totals_market": totals_market_baseline_xg(data, home_team, away_team, as_of_date),
     }
+    if market_enabled:
+        components["market"] = odds_implied_baseline_xg(data, home_team, away_team, as_of_date)
+        components["totals_market"] = totals_market_baseline_xg(data, home_team, away_team, as_of_date)
+    else:
+        components["market"] = {**components["goals"], "baseline_mode": "market", "available": False, "fallback": "market_disabled"}
+        components["totals_market"] = {**components["goals"], "baseline_mode": "totals_market", "available": False, "fallback": "market_disabled"}
     if mode == "blended":
         return blend_baseline_xg(components, weights=blend_weights)
     return components[mode]
