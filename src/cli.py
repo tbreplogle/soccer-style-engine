@@ -11,6 +11,7 @@ from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
+from src.data_ingestion.multi_league_football_data import download_football_data_leagues, normalize_multi_league_football_data
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
 from src.features.event_features import build_team_match_style_log
 from src.features.free_style_proxies import build_free_style_proxies
@@ -19,6 +20,8 @@ from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
 from src.models.current_score_projection import project_current_match
+from src.models.international_readiness import audit_international_readiness
+from src.models.multi_league_diagnostics import run_multi_league_profile_diagnostics
 from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
@@ -80,6 +83,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--league", default="")
     p.add_argument("--season", default="")
 
+    p = sub.add_parser("download-football-data-leagues")
+    p.add_argument("--season-code", default="2526")
+    p.add_argument("--fallback-season-code", default="2425")
+    p.add_argument("--leagues", default="E0,E1,SP1,D1,I1,F1")
+    p.add_argument("--output-dir", default="data/raw/football-data")
+
+    p = sub.add_parser("normalize-multi-league-football-data")
+    p.add_argument("--input", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--season", default="")
+
     p = sub.add_parser("build-free-proxies")
     p.add_argument("--input", required=True)
     p.add_argument("--as-of-date", required=True)
@@ -130,6 +144,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-dir", default="outputs/reports")
     p.add_argument("--min-matches", type=int, default=6)
     p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+
+    p = sub.add_parser("diagnose-multi-league-profiles")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+    p.add_argument("--min-matches", type=int, default=6)
+    p.add_argument("--monthly", action="store_true")
+
+    p = sub.add_parser("audit-international-readiness")
+    p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
+    p.add_argument("--output-dir", default="outputs/reports")
 
     return parser
 
@@ -190,6 +217,18 @@ def main(argv: list[str] | None = None) -> None:
             season=args.season,
         )
         print(f"Wrote {len(result)} normalized current rows to {args.output}")
+    elif args.command == "download-football-data-leagues":
+        leagues = [league for league in args.leagues.split(",") if league.strip()]
+        result = download_football_data_leagues(
+            season_code=args.season_code,
+            leagues=leagues,
+            fallback_season_code=args.fallback_season_code,
+            output_dir=args.output_dir,
+        )
+        print(result.to_string(index=False))
+    elif args.command == "normalize-multi-league-football-data":
+        result = normalize_multi_league_football_data(args.input, output_path=args.output, season=args.season)
+        print(f"Wrote {len(result)} normalized multi-league current rows to {args.output}")
     elif args.command == "build-free-proxies":
         result = build_free_style_proxies(args.input, args.as_of_date)
         output = Path(args.output)
@@ -241,6 +280,21 @@ def main(argv: list[str] | None = None) -> None:
             min_matches=args.min_matches,
             output_dir=args.output_dir,
         )
+        print(result["report"])
+    elif args.command == "diagnose-multi-league-profiles":
+        profiles = [profile for profile in args.profiles.split(",") if profile.strip()]
+        result = run_multi_league_profile_diagnostics(
+            args.input,
+            args.start_date,
+            args.end_date,
+            profiles=profiles,
+            min_matches=args.min_matches,
+            monthly=args.monthly,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "audit-international-readiness":
+        result = audit_international_readiness(args.statsbomb_root, output_dir=args.output_dir)
         print(result["report"])
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
