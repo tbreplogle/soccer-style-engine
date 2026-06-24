@@ -17,3 +17,6 @@ outputs/projections/*
 !outputs/projections/.gitkeep
 outputs/reports/*
 !outputs/reports/.gitkeep
+outputs/runs/
+outputs/runs/*
+outputs/runs/**

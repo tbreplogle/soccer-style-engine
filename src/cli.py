@@ -38,6 +38,9 @@ from src.models.multi_season_validation import run_multi_season_validation
 from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
+from src.operational.daily_runner import run_daily_pipeline
+from src.operational.defaults import explain_operational_defaults
+from src.operational.health_check import format_health_check, run_operational_health_check
 from src.reports.real_data_validation import run_real_data_validation
 from src.reports.projection_report import compare_club_projection_profiles, compare_international_projection_profiles
 from src.reports.slate_report import build_club_slate_report, build_international_slate_report
@@ -294,6 +297,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profiles", default="international_score_projection,international_winner_probability,international_total_goals,international_event_style_context,international_model_only")
     p.add_argument("--output-dir", default="outputs/reports")
     p.add_argument("--projection-output-dir", default="outputs/projections")
+
+    p = sub.add_parser("run-daily-pipeline")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--season-code", default="2526")
+    p.add_argument("--fallback-season-code", default="2425")
+    p.add_argument("--leagues", default="E0,E1,SP1,D1,I1,F1")
+    p.add_argument("--output-root", default="outputs/runs")
+    p.add_argument("--slate-type", choices=["auto", "future", "historical", "manual"], default="auto")
+    p.add_argument("--max-matches", type=int, default=20)
+    p.add_argument("--manual-club-matchups")
+    p.add_argument("--include-international", action="store_true")
+    p.add_argument("--international-input")
+    p.add_argument("--manual-international-matchups")
+    p.add_argument("--skip-download", action="store_true")
+    p.add_argument("--run-quick-audit", action="store_true")
+    p.add_argument("--raw-input-dir", default="data/raw/football-data")
+    p.add_argument("--processed-output", default="data/processed/operational_current_match_results.csv")
+
+    sub.add_parser("explain-operational-defaults")
+    sub.add_parser("operational-health-check")
 
     return parser
 
@@ -585,6 +608,35 @@ def main(argv: list[str] | None = None) -> None:
             projection_output_dir=args.projection_output_dir,
         )
         print(result["results"].to_string(index=False))
+    elif args.command == "run-daily-pipeline":
+        result = run_daily_pipeline(
+            as_of_date=args.as_of_date,
+            season_code=args.season_code,
+            fallback_season_code=args.fallback_season_code,
+            leagues=args.leagues,
+            output_root=args.output_root,
+            slate_type=args.slate_type,
+            max_matches=args.max_matches,
+            include_international=args.include_international,
+            international_input=args.international_input,
+            manual_club_matchups=args.manual_club_matchups,
+            manual_international_matchups=args.manual_international_matchups,
+            skip_download=args.skip_download,
+            run_quick_audit=args.run_quick_audit,
+            raw_input_dir=args.raw_input_dir,
+            processed_output=args.processed_output,
+        )
+        print(f"Daily pipeline complete: run_dir={result['run_dir']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Summary: {result['summary_path']}")
+        if result["warnings"]:
+            print("Warnings:")
+            for warning in result["warnings"]:
+                print(f"- {warning}")
+    elif args.command == "explain-operational-defaults":
+        print(explain_operational_defaults())
+    elif args.command == "operational-health-check":
+        print(format_health_check(run_operational_health_check()))
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

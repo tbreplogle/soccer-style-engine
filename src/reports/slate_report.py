@@ -145,7 +145,12 @@ def build_club_slate_report(
         ["league", "home_team", "away_team", "projection_profile", "projected_total", "home_win_prob", "draw_prob", "away_win_prob", "confidence_label"],
         ["projection_profile", "baseline_mode_used", "market_influence_level", "home_xg_final", "away_xg_final", "projected_total", "most_likely_score", "confidence_label", "risk_flags", "model_market_gap_summary"],
         ("home_team", "away_team"),
-        ["Proxy score adjustments remain disabled by default."],
+        [
+            "General report view highlights score_projection; winner_probability is the strongest validated W/D/L context profile from Phase 14.",
+            "Data Support / Risk Context wording should be used instead of treating confidence labels as certainty.",
+            "Confidence is not a betting signal, and market gap is not a betting recommendation.",
+            "Proxy score adjustments remain disabled by default.",
+        ],
     )
     return {"results": result, "slate_type": resolved_type, "csv_path": csv_path, "markdown_path": md_path}
 
@@ -224,7 +229,10 @@ def build_international_slate_report(
         ["team_a", "team_b", "projection_profile", "projected_total", "team_a_win_prob", "draw_prob", "team_b_win_prob", "confidence_label"],
         ["projection_profile", "baseline_mode_used", "team_a_xg_final", "team_b_xg_final", "projected_total", "most_likely_score", "confidence_label", "risk_flags", "international_context_warnings"],
         ("team_a", "team_b"),
-        ["International outputs use national-team ratings only and do not mix club ratings."],
+        [
+            "International outputs use national-team ratings only and do not mix club ratings.",
+            "International Data Support remains conservative and context-only.",
+        ],
     )
     return {"results": result, "slate_type": resolved_type, "csv_path": csv_path, "markdown_path": md_path}
 

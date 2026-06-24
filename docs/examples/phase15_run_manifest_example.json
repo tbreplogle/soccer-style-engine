@@ -1,0 +1,38 @@
+{
+  "run_id": "2026-05-25",
+  "run_date": "2026-05-25",
+  "generated_at": "2026-05-25T12:00:00+00:00",
+  "git_branch": "phase15-operational-defaults-and-daily-runner",
+  "git_commit": "example",
+  "input_files_used": [
+    "data/raw/football-data",
+    "outputs/runs/2026-05-25/normalized_current_match_results.csv"
+  ],
+  "leagues": ["E0", "E1", "SP1", "D1", "I1", "F1"],
+  "season_code": "2526",
+  "downloaded_files_status": [],
+  "normalized_row_counts": {
+    "total_rows": 2282
+  },
+  "slate_type": "historical_validation_slate",
+  "profiles_run": ["score_projection", "winner_probability", "total_goals", "market_anchored", "model_only"],
+  "defaults_used": {
+    "club": {
+      "general_report_profile": "score_projection",
+      "primary_wdl_profile": "winner_probability",
+      "proxy_adjustments_enabled": false,
+      "confidence_language": "data_support_context"
+    }
+  },
+  "guardrails_active": {
+    "no_betting_recommendations": true,
+    "blocked_language_categories": ["wagering_action_language", "selection_advice_language"],
+    "proxy_adjustments_disabled_by_default": true
+  },
+  "warnings": [],
+  "generated_output_paths": [
+    "outputs/runs/2026-05-25/club_slate_report.md",
+    "outputs/runs/2026-05-25/club_slate_projections.csv",
+    "outputs/runs/2026-05-25/run_summary.md"
+  ]
+}

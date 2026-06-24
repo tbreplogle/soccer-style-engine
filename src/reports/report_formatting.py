@@ -82,9 +82,9 @@ def write_markdown_report(
         for key, group in frame.groupby([left, right], dropna=False):
             lines.extend([f"### {key[0]} vs {key[1]}", "", markdown_table(group, detail_columns), ""])
     lines.extend([
-        "## Confidence And Risk",
+        "## Data Support And Risk Context",
         "",
-        "Confidence is an evidence-quality signal, not certainty. Risk flags identify sparse samples, missing data, neutral-site uncertainty, or profile disagreement.",
+        "Data Support is evidence-quality context, not certainty and not a betting signal. Risk flags identify sparse samples, missing data, neutral-site uncertainty, or profile disagreement.",
         "",
     ])
     if extra_notes:
