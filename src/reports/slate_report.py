@@ -147,8 +147,8 @@ def build_club_slate_report(
         ("home_team", "away_team"),
         [
             "General report view highlights score_projection; winner_probability is the strongest validated W/D/L context profile from Phase 14.",
-            "Data Support / Risk Context wording should be used instead of treating confidence labels as certainty.",
-            "Confidence is not a betting signal, and market gap is not a betting recommendation.",
+            "Data Support / Risk Context wording should be used instead of treating support labels as certainty.",
+            "Data Support is not a betting signal, and market gap is not a recommendation.",
             "Proxy score adjustments remain disabled by default.",
         ],
     )

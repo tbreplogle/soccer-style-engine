@@ -32,6 +32,9 @@ h1, h2, h3 { letter-spacing: 0; }
 a { color: #0b5d7a; }
 .notice { background: #fff; border: 1px solid #d8d8d0; border-left: 4px solid #2f7d57; padding: 12px 14px; margin: 16px 0; }
 .warning { border-left-color: #b66a00; }
+.status-pill { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #e8f1ec; font-size: 12px; font-weight: 700; }
+.status-warn { background: #fff1d7; }
+.status-fail { background: #f8d7da; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .metric { background: #fff; border: 1px solid #d8d8d0; padding: 12px; border-radius: 6px; }
 .metric span { display: block; color: #5f6368; font-size: 12px; margin-bottom: 4px; }
@@ -44,6 +47,15 @@ tr.latest td { background: #f0f7f2; }
 .report { background: #fff; border: 1px solid #d8d8d0; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
 pre { overflow-x: auto; background: #202124; color: #f7f7f4; padding: 12px; border-radius: 6px; }
 """
+
+
+def _status_class(status: object) -> str:
+    text = str(status or "").lower()
+    if text.startswith("failed") or "unsafe" in text:
+        return "status-pill status-fail"
+    if "warning" in text or "stale" in text or "probably" in text:
+        return "status-pill status-warn"
+    return "status-pill"
 
 
 def _read_text(path: Path) -> str:
@@ -89,16 +101,19 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         "<!doctype html><html><head><meta charset=\"utf-8\">",
         f"<title>Run {escape_html(run_id)}</title>",
         f"<style>{CSS}</style></head><body>",
-        f"<header><h1>Run {escape_html(run_id)}</h1><p>Static report viewer detail page.</p></header><main>",
+        f"<header><h1>Run {escape_html(run_id)}</h1><p>Run date {escape_html(entry.get('run_date'))} | Generated {escape_html(entry.get('generated_at'))}</p></header><main>",
         "<div class=\"notice\"><strong>Guardrail:</strong> This viewer reads generated outputs only. It does not recompute projections, create betting recommendations, or claim proxy metrics are true event/tracking style.</div>",
+        "<div class=\"notice\"><strong>Interpretation:</strong> probability and support fields are Data Support / Risk Context, not certainty and not a recommendation.</div>",
         "<section class=\"grid\">",
-        f"<div class=\"metric\"><span>Status</span>{escape_html(entry.get('status'))}</div>",
-        f"<div class=\"metric\"><span>Currentness</span>{escape_html(entry.get('currentness_status'))}</div>",
-        f"<div class=\"metric\"><span>Season sanity</span>{escape_html(entry.get('season_sanity_status'))}</div>",
+        f"<div class=\"metric\"><span>Status</span><span class=\"{_status_class(entry.get('status'))}\">{escape_html(entry.get('status'))}</span></div>",
+        f"<div class=\"metric\"><span>Currentness</span><span class=\"{_status_class(entry.get('currentness_status'))}\">{escape_html(entry.get('currentness_status'))}</span></div>",
+        f"<div class=\"metric\"><span>Season sanity</span><span class=\"{_status_class(entry.get('season_sanity_status'))}\">{escape_html(entry.get('season_sanity_status'))}</span></div>",
         f"<div class=\"metric\"><span>Rows</span>{escape_html(entry.get('row_count'))}</div>",
         f"<div class=\"metric\"><span>Warnings</span>{escape_html(entry.get('warnings_count'))}</div>",
         f"<div class=\"metric\"><span>Slate type</span>{escape_html(entry.get('slate_type'))}</div>",
         "</section>",
+        "<h2>Run Output Paths</h2>",
+        unordered_list(entry.get("output_files_present") or []),
         "<h2>Warnings</h2>",
         unordered_list(entry.get("warnings") or []),
         "<h2>Safety Scan</h2>",
@@ -136,8 +151,8 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         cls = " class=\"latest\"" if run_id == latest_run_id else ""
         rows.append(f"<tr{cls}>")
         rows.append(f"<td>{escape_html(entry.get('run_date'))}</td>")
-        rows.append(f"<td>{escape_html(entry.get('status'))}</td>")
-        rows.append(f"<td>{escape_html(entry.get('currentness_status'))}</td>")
+        rows.append(f"<td><span class=\"{_status_class(entry.get('status'))}\">{escape_html(entry.get('status'))}</span></td>")
+        rows.append(f"<td><span class=\"{_status_class(entry.get('currentness_status'))}\">{escape_html(entry.get('currentness_status'))}</span></td>")
         rows.append(f"<td>{escape_html(entry.get('season_sanity_status'))}</td>")
         rows.append(f"<td>{escape_html(entry.get('row_count'))}</td>")
         rows.append(f"<td>{escape_html(entry.get('warnings_count'))}</td>")
@@ -146,6 +161,22 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         rows.append("</tr>")
     rows.append("</tbody></table></div>")
     return "\n".join(rows)
+
+
+def _latest_summary(entries: list[dict[str, Any]]) -> str:
+    if not entries:
+        return ""
+    latest = entries[0]
+    return "\n".join([
+        "<section class=\"notice\">",
+        "<h2>Latest Run</h2>",
+        f"<p><strong>{escape_html(latest.get('run_date'))}</strong> | "
+        f"<span class=\"{_status_class(latest.get('status'))}\">{escape_html(latest.get('status'))}</span> | "
+        f"Currentness: <span class=\"{_status_class(latest.get('currentness_status'))}\">{escape_html(latest.get('currentness_status'))}</span> | "
+        f"Warnings: {escape_html(latest.get('warnings_count'))}</p>",
+        f"<p class=\"muted\">Generated at {escape_html(latest.get('generated_at'))}. Row count: {escape_html(latest.get('row_count'))}. Slate type: {escape_html(latest.get('slate_type'))}.</p>",
+        "</section>",
+    ])
 
 
 def build_static_viewer(runs_root: str | Path = "outputs/runs", output_dir: str | Path = "outputs/viewer") -> dict[str, Any]:
@@ -169,6 +200,8 @@ def build_static_viewer(runs_root: str | Path = "outputs/runs", output_dir: str 
         f"<p class=\"muted\">Generated at {escape_html(generated_at)}</p>",
         "<div class=\"notice\"><strong>Source of truth:</strong> this viewer reads files under the run output folder. It does not recompute projections or modify model logic.</div>",
         "<div class=\"notice\"><strong>Guardrails:</strong> no betting recommendations, no paid data dependencies, no dashboard/event visuals, and free proxy metrics are not true event/tracking style.</div>",
+        "<div class=\"notice\"><strong>Data Support / Risk Context:</strong> displayed support labels are context for review, not certainty and not recommendations.</div>",
+        _latest_summary(entries),
         "<h2>Runs</h2>",
         _index_table(entries),
         "<h2>Safety Scan</h2>",

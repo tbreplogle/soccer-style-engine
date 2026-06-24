@@ -34,6 +34,16 @@ def _visible_generated_outputs() -> list[str]:
     return [line for line in completed.stdout.splitlines() if any(prefix in line.replace("\\", "/") for prefix in bad_prefixes)]
 
 
+def _git_ignored(path: str) -> tuple[bool, str]:
+    try:
+        completed = subprocess.run(["git", "check-ignore", path], capture_output=True, text=True)
+    except OSError as exc:
+        return False, f"Could not run git check-ignore for {path}: {exc}"
+    if completed.returncode == 0:
+        return True, f"{path} is ignored."
+    return False, f"{path} is not ignored."
+
+
 def run_operational_health_check() -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -57,8 +67,33 @@ def run_operational_health_check() -> dict[str, Any]:
     checks.append({"name": "generated_outputs_hidden", "passed": not visible, "message": "No generated outputs visible to git." if not visible else "; ".join(visible)})
     if visible:
         warnings.append("Some generated output paths are visible to git status.")
+    for ignored_path in [
+        "outputs/runs/example.html",
+        "outputs/run_logs/example.csv",
+        "outputs/viewer/index.html",
+        "outputs/reports/example.md",
+        "outputs/projections/example.csv",
+        "data/processed/example.csv",
+        "data/raw/football-data/E0_2526.csv",
+        "data/raw/statsbomb-open-data/example.json",
+    ]:
+        ok, message = _git_ignored(ignored_path)
+        checks.append({"name": f"ignored_{ignored_path}", "passed": ok, "message": message})
+        if not ok:
+            warnings.append(message)
+    for script in ["scripts/test_quick.ps1", "scripts/test_full.ps1", "scripts/run_today.ps1", "scripts/build_viewer.ps1", "scripts/open_viewer.ps1"]:
+        exists = Path(script).exists()
+        checks.append({"name": f"script_{script}", "passed": exists, "message": f"{script} {'exists' if exists else 'is missing'}."})
+        if not exists:
+            warnings.append(f"Missing workflow script: {script}")
+    for doc in ["README.md", "docs/V1_WORKFLOW.md", "docs/DEVELOPER_COMMANDS.md", "docs/TESTING_STRATEGY.md", "docs/PHASE19_USAGE.md"]:
+        exists = Path(doc).exists()
+        checks.append({"name": f"doc_{doc}", "passed": exists, "message": f"{doc} {'exists' if exists else 'is missing'}."})
+        if not exists:
+            warnings.append(f"Missing v1 workflow doc: {doc}")
     commands = [
         "run-daily-pipeline",
+        "run-today",
         "list-runs",
         "build-report-viewer",
         "open-report-viewer",

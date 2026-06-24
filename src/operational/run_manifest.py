@@ -37,6 +37,7 @@ def build_run_manifest(
     timing: dict[str, Any] | None = None,
     processed_freshness: dict[str, Any] | None = None,
     viewer_output_path: str = "",
+    processed_reuse_status: str = "unknown",
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -49,6 +50,7 @@ def build_run_manifest(
         "timing": timing or {},
         "processed_freshness": processed_freshness or {},
         "viewer_output_path": viewer_output_path,
+        "processed_reuse_status": processed_reuse_status,
         "git_branch": _git_value(["branch", "--show-current"]),
         "git_commit": _git_value(["rev-parse", "--short", "HEAD"]),
         "input_files_used": input_files,

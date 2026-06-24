@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -324,6 +325,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
     p.add_argument("--reuse-processed-if-fresh", action="store_true")
     p.add_argument("--build-viewer", action="store_true")
+    p.add_argument("--viewer-output-dir", default="outputs/viewer")
+
+    p = sub.add_parser("run-today")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--season-code", default=None)
+    p.add_argument("--fallback-season-code", default=None)
+    p.add_argument("--leagues", default=None)
+    p.add_argument("--max-matches", type=int)
+    p.add_argument("--skip-download", action="store_true")
+    p.add_argument("--include-international", action="store_true")
+    p.add_argument("--run-profile-comparison", action="store_true")
+    p.add_argument("--open-viewer", action="store_true")
+    p.add_argument("--raw-input-dir", default="data/raw/football-data")
+    p.add_argument("--processed-output", default="data/processed/operational_current_match_results.csv")
+    p.add_argument("--output-root", default="outputs/runs")
     p.add_argument("--viewer-output-dir", default="outputs/viewer")
 
     p = sub.add_parser("check-data-currentness")
@@ -683,6 +699,40 @@ def main(argv: list[str] | None = None) -> None:
             print("Warnings:")
             for warning in result["warnings"]:
                 print(f"- {warning}")
+        if str(result["status"]).startswith("failed"):
+            raise SystemExit(1)
+    elif args.command == "run-today":
+        result = run_daily_pipeline(
+            as_of_date=args.as_of_date,
+            season_code=args.season_code,
+            fallback_season_code=args.fallback_season_code,
+            leagues=args.leagues,
+            output_root=args.output_root,
+            slate_type="auto",
+            max_matches=args.max_matches,
+            include_international=args.include_international,
+            skip_download=args.skip_download,
+            raw_input_dir=args.raw_input_dir,
+            processed_output=args.processed_output,
+            currentness_policy="warn",
+            skip_profile_comparison=not args.run_profile_comparison,
+            reuse_processed_if_fresh=True,
+            build_viewer=True,
+            viewer_output_dir=args.viewer_output_dir,
+        )
+        print(f"Run today status: {result['status']}")
+        print(f"Run dir: {result['run_dir']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Summary: {result['summary_path']}")
+        if result.get("viewer"):
+            print(f"Viewer: {result['viewer']['viewer_output_path']}")
+            print(f"Viewer safety scan: {result['viewer']['safety_scan_status']}")
+        if result["warnings"]:
+            print("Warnings:")
+            for warning in result["warnings"]:
+                print(f"- {warning}")
+        if args.open_viewer:
+            print(f"Open this local file in a browser: {Path(args.viewer_output_dir, 'index.html').resolve()}")
         if str(result["status"]).startswith("failed"):
             raise SystemExit(1)
     elif args.command == "check-data-currentness":

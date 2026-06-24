@@ -201,6 +201,7 @@ def run_daily_pipeline(
     }
     generated: list[str] = []
     viewer_result: dict[str, Any] | None = None
+    processed_reuse_status = "normalized_from_raw"
     row_count = 0
     resolved_slate_type = slate_type
     status = "success"
@@ -249,9 +250,11 @@ def run_daily_pipeline(
             t0 = perf_counter()
             if reuse_processed_if_fresh and skip_download and currentness.get("processed_freshness_status") == "fresh" and Path(processed_output).exists():
                 normalized = pd.read_csv(processed_output)
+                processed_reuse_status = "reused_fresh_processed_data"
                 warnings.append("Reused fresh processed data; skipped normalization.")
             else:
                 normalized = normalize_multi_league_football_data(raw_dir, output_path=processed_output, season="")
+                processed_reuse_status = "normalized_from_raw"
                 currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical", slate_type=slate_type)
                 warnings = _drop_obsolete_processed_warnings(warnings, currentness)
                 warnings.extend([w for w in currentness["warnings"] if w not in warnings])
@@ -357,6 +360,7 @@ def run_daily_pipeline(
         currentness_policy=currentness_policy,
         timing=timing,
         viewer_output_path=viewer_output_path,
+        processed_reuse_status=processed_reuse_status,
     )
     generated.append(str(summary_path))
     manifest = build_run_manifest(
@@ -385,6 +389,7 @@ def run_daily_pipeline(
             "files_compared": currentness.get("files_compared"),
         },
         viewer_output_path=viewer_output_path,
+        processed_reuse_status=processed_reuse_status,
     )
     manifest_path = write_run_manifest(manifest, run_dir / "run_manifest.json")
     generated.append(str(manifest_path))
@@ -418,11 +423,13 @@ def run_daily_pipeline(
             currentness_policy=currentness_policy,
             timing=timing,
             viewer_output_path=viewer_output_path,
+            processed_reuse_status=processed_reuse_status,
         )
         manifest["status"] = status
         manifest["warnings"] = warnings
         manifest["generated_output_paths"] = generated
         manifest["viewer_output_path"] = viewer_output_path
+        manifest["processed_reuse_status"] = processed_reuse_status
         manifest_path = write_run_manifest(manifest, run_dir / "run_manifest.json")
     for path in generated:
         if Path(path).name.endswith(".md") and Path(path).name != "run_summary.md":
@@ -463,6 +470,7 @@ def run_daily_pipeline(
         "timing": timing,
         "warning_groups": warning_groups,
         "viewer": viewer_result,
+        "processed_reuse_status": processed_reuse_status,
     }
 
 
@@ -484,6 +492,7 @@ def write_run_summary(
     currentness_policy: str = "warn",
     timing: dict[str, float] | None = None,
     viewer_output_path: str = "",
+    processed_reuse_status: str = "unknown",
 ) -> Path:
     currentness = currentness or {"currentness_status": "unknown"}
     season_sanity = season_sanity or {"season_sanity_status": "unknown"}
@@ -521,6 +530,7 @@ def write_run_summary(
         f"- Confidence language: `{defaults.club.confidence_language}`",
         f"- Profiles run: {', '.join(profiles)}",
         f"- Timing seconds: `{timing}`",
+        f"- Processed data mode: `{processed_reuse_status}`",
         "",
         "## Guardrails",
         "",
@@ -536,6 +546,13 @@ def write_run_summary(
         "## Viewer",
         "",
         f"- Static viewer: `{viewer_output_path}`" if viewer_output_path else "- Static viewer: not requested for this run.",
+        "",
+        "## Workflow Hints",
+        "",
+        "- Quick tests: `.\\.venv\\Scripts\\python.exe -m pytest -m \"not slow\"`",
+        "- Full validation: `.\\.venv\\Scripts\\python.exe -m pytest`",
+        "- Daily workflow script: `.\\scripts\\run_today.ps1`",
+        "- Build viewer: `.\\.venv\\Scripts\\python.exe -m src.cli build-report-viewer --runs-root outputs/runs --output-dir outputs/viewer`",
         "",
         "## Warning Groups",
         "",

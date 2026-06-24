@@ -1,47 +1,80 @@
-# Soccer Style Engine - Phase 4 Real Data + Projection Foundation
+# Soccer Style Engine
 
-This project tracks how teams play before making score projections.
+Soccer Style Engine is a local, explainable soccer projection workflow. It tracks how teams play, validates model behavior, writes operational run outputs, and renders those outputs in a lightweight static viewer.
 
-The rule of this project remains:
+The project rule remains:
 
-> We do not predict first. We track how teams play first, then use that tracked identity to explain matchups.
+> We track measurable team behavior first, then use that evidence to explain projections.
 
-## What Phase 4 Adds
+## What It Can Do Today
 
-1. Local StatsBomb Open Data JSON ingestion.
-2. Local football-data.co.uk CSV normalization.
-3. Event-based team-match style metrics.
-4. Rolling team style profiles using only prior matches.
-5. Deterministic identity and matchup intelligence.
-6. Conservative baseline xG plus capped style adjustments.
-7. Independent Poisson score probabilities.
-8. Rolling backtest scaffolding with leakage guardrails.
+- Normalize free Football-Data CSVs and sample/open event data.
+- Build conservative club and international projection reports.
+- Run currentness, season sanity, leakage, calibration, and validation checks.
+- Write daily run manifests, summaries, logs, projections, and reports.
+- Build a static local report viewer from generated run outputs.
+- Keep no-betting guardrails active by default.
 
-## What This Is Not
+## What It Does Not Do Yet
 
-This is not a betting app, a frontend, or a black-box ML system. It does not make unsupported claims from team reputation.
+- No betting recommendations or wagering advice.
+- No frontend dashboard, PassSonar, heat maps, style fingerprints, or event visuals.
+- No paid data dependencies or fragile scraping.
+- No claim that current free proxy metrics are true event/tracking style.
+- No mixing club ratings into international-team projections.
 
-## Key Commands
+## Daily Workflow
+
+Run the one-command local workflow:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m src.cli build-style-log --statsbomb-root data/raw/statsbomb-open-data --competition-id 1 --season-id 1
-.\.venv\Scripts\python.exe -m src.cli build-profiles --as-of-date YYYY-MM-DD
-.\.venv\Scripts\python.exe -m src.cli identity --team "Team Name" --as-of-date YYYY-MM-DD
-.\.venv\Scripts\python.exe -m src.cli matchup --home "Team A" --away "Team B" --as-of-date YYYY-MM-DD
-.\.venv\Scripts\python.exe -m src.cli project --home "Team A" --away "Team B" --as-of-date YYYY-MM-DD
-.\.venv\Scripts\python.exe -m src.cli backtest --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+.\scripts\run_today.ps1
 ```
 
-## Output Files
+Or use the friendly CLI wrapper:
 
-- `data/processed/team_match_style_log.csv`
-- `data/processed/team_style_profiles.csv`
-- `data/processed/match_results.csv`
-- `outputs/projections/match_projection.csv`
-- `outputs/reports/backtest_results.csv`
-- `outputs/reports/backtest_summary.md`
+```powershell
+.\.venv\Scripts\python.exe -m src.cli run-today --as-of-date 2026-05-25 --skip-download --max-matches 5
+```
 
-## Important Guardrail
+Open the viewer path printed at the end, or run:
 
-If data is missing, the engine outputs nulls or low-confidence flags. Synthetic files under `data/sample/` are test fixtures only.
+```powershell
+.\scripts\open_viewer.ps1
+```
+
+## Tests
+
+Quick everyday tests:
+
+```powershell
+.\scripts\test_quick.ps1
+```
+
+Full validation before commit or merge:
+
+```powershell
+.\scripts\test_full.ps1
+```
+
+Slow tests are not bad. They are the heavier validation and workflow checks that should be run intentionally.
+
+## Data Modes
+
+Current free data from Football-Data is match-level data. It supports baseline projections and free proxy context, but it is not true event/tracking style.
+
+Historical StatsBomb Open Data is event-level sample/open data. It can support event-style metrics where the event fields exist. If tracking or 360 data is missing, the engine must not fake it.
+
+## Generated Outputs
+
+Generated outputs are ignored and should not be committed:
+
+- `outputs/runs/`
+- `outputs/run_logs/`
+- `outputs/viewer/`
+- `outputs/reports/`
+- `outputs/projections/`
+- `data/processed/`
+- raw Football-Data and StatsBomb folders
+
+Commit source, tests, docs, scripts, examples, and sample input fixtures.
