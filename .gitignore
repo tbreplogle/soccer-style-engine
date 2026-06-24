@@ -23,3 +23,6 @@ outputs/runs/**
 outputs/run_logs/
 outputs/run_logs/*
 outputs/run_logs/**
+outputs/viewer/
+outputs/viewer/*
+outputs/viewer/**

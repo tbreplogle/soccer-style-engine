@@ -46,6 +46,8 @@ from src.operational.season_sanity import check_season_sanity
 from src.reports.real_data_validation import run_real_data_validation
 from src.reports.projection_report import compare_club_projection_profiles, compare_international_projection_profiles
 from src.reports.slate_report import build_club_slate_report, build_international_slate_report
+from src.viewer.run_index import build_run_index, format_run_index_table
+from src.viewer.static_viewer import build_static_viewer
 
 
 def _print_json(payload: object) -> None:
@@ -321,6 +323,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skip-profile-comparison", action="store_true")
     p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
     p.add_argument("--reuse-processed-if-fresh", action="store_true")
+    p.add_argument("--build-viewer", action="store_true")
+    p.add_argument("--viewer-output-dir", default="outputs/viewer")
 
     p = sub.add_parser("check-data-currentness")
     p.add_argument("--raw-dir", default="data/raw/football-data")
@@ -340,6 +344,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("explain-operational-defaults")
     sub.add_parser("explain-currentness")
     sub.add_parser("operational-health-check")
+
+    p = sub.add_parser("list-runs")
+    p.add_argument("--runs-root", default="outputs/runs")
+    p.add_argument("--json", action="store_true")
+
+    p = sub.add_parser("build-report-viewer")
+    p.add_argument("--runs-root", default="outputs/runs")
+    p.add_argument("--output-dir", default="outputs/viewer")
+
+    p = sub.add_parser("open-report-viewer")
+    p.add_argument("--viewer", default="outputs/viewer/index.html")
 
     return parser
 
@@ -653,12 +668,17 @@ def main(argv: list[str] | None = None) -> None:
             skip_profile_comparison=args.skip_profile_comparison,
             profiles=args.profiles,
             reuse_processed_if_fresh=args.reuse_processed_if_fresh,
+            build_viewer=args.build_viewer,
+            viewer_output_dir=args.viewer_output_dir,
         )
         print(f"Daily pipeline status: {result['status']}")
         print(f"Daily pipeline complete: run_dir={result['run_dir']}")
         print(f"Manifest: {result['manifest_path']}")
         print(f"Summary: {result['summary_path']}")
         print(f"Run logs: {result['run_log_paths']['csv_path']}, {result['run_log_paths']['jsonl_path']}")
+        if result.get("viewer"):
+            print(f"Viewer: {result['viewer']['viewer_output_path']}")
+            print(f"Viewer safety scan: {result['viewer']['safety_scan_status']}")
         if result["warnings"]:
             print("Warnings:")
             for warning in result["warnings"]:
@@ -685,6 +705,21 @@ def main(argv: list[str] | None = None) -> None:
         print(explain_currentness())
     elif args.command == "operational-health-check":
         print(format_health_check(run_operational_health_check()))
+    elif args.command == "list-runs":
+        entries = build_run_index(args.runs_root)
+        _print_json(entries) if args.json else print(format_run_index_table(entries))
+    elif args.command == "build-report-viewer":
+        result = build_static_viewer(args.runs_root, args.output_dir)
+        print(f"Viewer output: {result['viewer_output_path']}")
+        print(f"Runs included: {result['runs_included']}")
+        print(f"Safety scan status: {result['safety_scan_status']}")
+        if result["safety_warnings"]:
+            print("Safety warnings:")
+            for warning in result["safety_warnings"]:
+                print(f"- {warning}")
+    elif args.command == "open-report-viewer":
+        path = Path(args.viewer).resolve()
+        print(f"Open this local file in a browser: {path}")
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

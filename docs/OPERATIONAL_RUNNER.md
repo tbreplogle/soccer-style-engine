@@ -34,4 +34,12 @@ Optional international slate:
 
 International is optional. If requested data is missing, the runner warns and still completes the club run.
 
+Optional static report viewer:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli run-daily-pipeline --as-of-date 2026-05-25 --skip-download --slate-type historical --build-viewer
+```
+
+The viewer is written to `outputs/viewer/index.html`. It reads generated reports and tables only; it does not recompute projections, create betting recommendations, or become the full dashboard/UI layer.
+
 Generated run files remain ignored and should not be committed.

@@ -177,6 +177,8 @@ def run_daily_pipeline(
     skip_profile_comparison: bool = False,
     profiles: str | list[str] | None = None,
     reuse_processed_if_fresh: bool = False,
+    build_viewer: bool = False,
+    viewer_output_dir: str | Path = "outputs/viewer",
     defaults: OperationalDefaults = OPERATIONAL_DEFAULTS,
 ) -> dict[str, Any]:
     started = perf_counter()
@@ -198,6 +200,7 @@ def run_daily_pipeline(
         "total_duration_seconds": 0.0,
     }
     generated: list[str] = []
+    viewer_result: dict[str, Any] | None = None
     row_count = 0
     resolved_slate_type = slate_type
     status = "success"
@@ -333,6 +336,9 @@ def run_daily_pipeline(
             pass
     timing["total_duration_seconds"] = perf_counter() - started
     warning_groups = _warning_groups(warnings + ([error_message] if error_message else []), currentness, include_international)
+    viewer_output_path = str(Path(viewer_output_dir) / "index.html") if build_viewer else ""
+    if viewer_output_path:
+        generated.append(viewer_output_path)
     summary_path = write_run_summary(
         run_dir / "run_summary.md",
         run_date=as_of_date,
@@ -350,6 +356,7 @@ def run_daily_pipeline(
         season_sanity=season,
         currentness_policy=currentness_policy,
         timing=timing,
+        viewer_output_path=viewer_output_path,
     )
     generated.append(str(summary_path))
     manifest = build_run_manifest(
@@ -377,9 +384,46 @@ def run_daily_pipeline(
             "processed_modified_at": currentness.get("processed_modified_at"),
             "files_compared": currentness.get("files_compared"),
         },
+        viewer_output_path=viewer_output_path,
     )
     manifest_path = write_run_manifest(manifest, run_dir / "run_manifest.json")
     generated.append(str(manifest_path))
+    if build_viewer:
+        try:
+            from src.viewer.static_viewer import build_static_viewer
+
+            viewer_result = build_static_viewer(output_root, viewer_output_dir)
+            if viewer_result.get("safety_scan_status") == "warning":
+                warnings.append("Viewer safety scan found action-language warnings; inspect viewer output.")
+        except Exception as exc:
+            warnings.append(f"Viewer generation failed: {exc}")
+        if warnings and status == "success":
+            status = "success_with_warnings"
+        warning_groups = _warning_groups(warnings + ([error_message] if error_message else []), currentness, include_international)
+        summary_path = write_run_summary(
+            run_dir / "run_summary.md",
+            run_date=as_of_date,
+            data_sources=[str(raw_dir), str(normalized_run_path)],
+            leagues=selected_leagues,
+            row_counts=row_counts,
+            slate_type=resolved_slate_type,
+            profiles=comparison_profiles,
+            warnings=warnings + ([error_message] if error_message else []),
+            warning_groups=warning_groups,
+            generated_files=generated,
+            defaults=defaults,
+            run_status=status,
+            currentness=currentness,
+            season_sanity=season,
+            currentness_policy=currentness_policy,
+            timing=timing,
+            viewer_output_path=viewer_output_path,
+        )
+        manifest["status"] = status
+        manifest["warnings"] = warnings
+        manifest["generated_output_paths"] = generated
+        manifest["viewer_output_path"] = viewer_output_path
+        manifest_path = write_run_manifest(manifest, run_dir / "run_manifest.json")
     for path in generated:
         if Path(path).name.endswith(".md") and Path(path).name != "run_summary.md":
             _prepend_operational_header(path, status, currentness, season, currentness_policy)
@@ -418,6 +462,7 @@ def run_daily_pipeline(
         "run_log_paths": log_paths,
         "timing": timing,
         "warning_groups": warning_groups,
+        "viewer": viewer_result,
     }
 
 
@@ -438,6 +483,7 @@ def write_run_summary(
     season_sanity: dict[str, Any] | None = None,
     currentness_policy: str = "warn",
     timing: dict[str, float] | None = None,
+    viewer_output_path: str = "",
 ) -> Path:
     currentness = currentness or {"currentness_status": "unknown"}
     season_sanity = season_sanity or {"season_sanity_status": "unknown"}
@@ -486,6 +532,10 @@ def write_run_summary(
         "## Generated Files",
         "",
         *[f"- `{file}`" for file in generated_files],
+        "",
+        "## Viewer",
+        "",
+        f"- Static viewer: `{viewer_output_path}`" if viewer_output_path else "- Static viewer: not requested for this run.",
         "",
         "## Warning Groups",
         "",

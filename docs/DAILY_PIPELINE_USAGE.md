@@ -18,6 +18,7 @@ Useful options:
 - `--manual-club-matchups data/sample/manual_club_matchups.csv` runs named club matchups.
 - `--include-international` adds international output if input exists.
 - `--run-quick-audit` writes a leakage audit summary into the run folder.
+- `--build-viewer` updates the local static report viewer after the run.
 
 Run outputs include:
 
@@ -29,5 +30,7 @@ Run outputs include:
 - `run_summary.md`
 
 The manifest records inputs, defaults, guardrails, git metadata, row counts, generated files, and warnings. The run summary is the human-readable overview.
+
+When `--build-viewer` is used, the runner also writes `outputs/viewer/index.html` and records that path in the manifest and run summary. The viewer reads generated outputs only; it does not recompute projections.
 
 The daily pipeline is not a betting system. Confidence is Data Support / Risk Context, market gaps are diagnostics, and proxy style context is not true tracking/event style for current free data.
