@@ -20,3 +20,6 @@ outputs/reports/*
 outputs/runs/
 outputs/runs/*
 outputs/runs/**
+outputs/run_logs/
+outputs/run_logs/*
+outputs/run_logs/**

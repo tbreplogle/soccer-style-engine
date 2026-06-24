@@ -1,0 +1,2 @@
+run_id,run_date,generated_at,status,currentness_status,season_sanity_status,leagues,row_count,slate_type,outputs_written,warnings_count,error_message,duration_seconds
+2026-05-25,2026-05-25,2026-06-24T12:00:00+00:00,success_with_warnings,probably_current,ok,"E0,E1,SP1,D1,I1,F1",2304,historical_validation_slate,8,1,,42.5

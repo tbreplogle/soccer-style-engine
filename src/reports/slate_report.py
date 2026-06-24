@@ -125,7 +125,7 @@ def build_club_slate_report(
     rows = []
     for matchup in matchups:
         for profile in profiles:
-            row = _club_row(input_path, matchup["home_team"], matchup["away_team"], matchup["as_of_date"], profile, league=matchup.get("league"))
+            row = _club_row(data, matchup["home_team"], matchup["away_team"], matchup["as_of_date"], profile, league=matchup.get("league"))
             row["slate_date"] = as_of_date
             row["slate_type"] = resolved_type
             row["league"] = matchup.get("league") or row.get("league", league)
@@ -210,7 +210,7 @@ def build_international_slate_report(
     rows = []
     for matchup in selected:
         for profile in profiles:
-            row = _intl_row(input_path, matchup["team_a"], matchup["team_b"], matchup["as_of_date"], profile, matchup.get("neutral_site", neutral_site), matchup.get("competition_context", competition_context))
+            row = _intl_row(data, matchup["team_a"], matchup["team_b"], matchup["as_of_date"], profile, matchup.get("neutral_site", neutral_site), matchup.get("competition_context", competition_context))
             row["slate_date"] = as_of_date
             row["slate_type"] = resolved_type
             rows.append(row)

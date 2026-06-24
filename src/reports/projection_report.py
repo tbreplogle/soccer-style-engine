@@ -88,7 +88,8 @@ def compare_club_projection_profiles(
     league: str | None = None,
 ) -> dict[str, Any]:
     selected = split_csv_arg(profiles if isinstance(profiles, str) else None, CLUB_PROFILES) if not isinstance(profiles, list) else profiles
-    rows = [_club_row(input_path, home, away, as_of_date, profile, league=league) for profile in selected]
+    data = pd.read_csv(input_path)
+    rows = [_club_row(data, home, away, as_of_date, profile, league=league) for profile in selected]
     frame = pd.DataFrame(rows)
     frame.insert(0, "profile_disagreement_flags", disagreement_flags(frame))
     csv_path = write_csv(frame, Path(projection_output_dir) / "projection_profile_comparison.csv")
@@ -108,7 +109,8 @@ def compare_international_projection_profiles(
     projection_output_dir: str | Path = "outputs/projections",
 ) -> dict[str, Any]:
     selected = split_csv_arg(profiles if isinstance(profiles, str) else None, INTERNATIONAL_PROFILES) if not isinstance(profiles, list) else profiles
-    rows = [_intl_row(input_path, team_a, team_b, as_of_date, profile, neutral_site, competition_context) for profile in selected]
+    data = pd.read_csv(input_path)
+    rows = [_intl_row(data, team_a, team_b, as_of_date, profile, neutral_site, competition_context) for profile in selected]
     frame = pd.DataFrame(rows)
     frame.insert(0, "profile_disagreement_flags", disagreement_flags(frame, international=True))
     csv_path = write_csv(frame, Path(projection_output_dir) / "projection_profile_comparison.csv")
