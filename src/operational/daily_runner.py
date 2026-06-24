@@ -86,6 +86,7 @@ def _log_row(
     warnings_count: int,
     error_message: str,
     duration_seconds: float,
+    timing: dict[str, float],
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -101,7 +102,57 @@ def _log_row(
         "warnings_count": warnings_count,
         "error_message": error_message,
         "duration_seconds": round(duration_seconds, 3),
+        "download_seconds": round(timing.get("download_seconds", 0.0), 3),
+        "normalization_seconds": round(timing.get("normalization_seconds", 0.0), 3),
+        "slate_seconds": round(timing.get("slate_seconds", 0.0), 3),
+        "audit_seconds": round(timing.get("audit_seconds", 0.0), 3),
+        "total_duration_seconds": round(timing.get("total_duration_seconds", duration_seconds), 3),
     }
+
+
+def _warning_groups(warnings: list[str], currentness: dict[str, Any], international_requested: bool = False) -> dict[str, list[str]]:
+    groups = {
+        "blocking_problems": [],
+        "data_currentness_notes": [],
+        "league_completion_notes": [],
+        "processed_raw_freshness_notes": [],
+        "international_notes": [],
+        "performance_notes": [],
+        "guardrail_notes": [
+            "No betting recommendations or action language.",
+            "Proxy score adjustments remain disabled by default.",
+        ],
+    }
+    for warning in warnings:
+        text = warning.lower()
+        if "blocked" in text or "unsafe" in text or "failed" in text:
+            groups["blocking_problems"].append(warning)
+        elif "appears season-complete" in text or "completed" in text:
+            groups["league_completion_notes"].append(warning)
+        elif "processed" in text or "raw" in text or "normaliz" in text:
+            groups["processed_raw_freshness_notes"].append(warning)
+        elif "international" in text:
+            groups["international_notes"].append(warning)
+        else:
+            groups["data_currentness_notes"].append(warning)
+    for league in currentness.get("leagues_completed", []):
+        note = f"{league} appears season-complete, not stale."
+        if note not in groups["league_completion_notes"]:
+            groups["league_completion_notes"].append(note)
+    if international_requested and not groups["international_notes"]:
+        groups["international_notes"].append("International requested and handled according to available local data.")
+    return groups
+
+
+def _drop_obsolete_processed_warnings(warnings: list[str], currentness: dict[str, Any]) -> list[str]:
+    if currentness.get("processed_freshness_status") != "fresh":
+        return warnings
+    return [
+        warning
+        for warning in warnings
+        if "Processed data is older than relevant raw data" not in warning
+        and "Processed data is missing but raw data exists" not in warning
+    ]
 
 
 def run_daily_pipeline(
@@ -123,6 +174,9 @@ def run_daily_pipeline(
     currentness_policy: str = "warn",
     historical_mode: bool = False,
     run_log_dir: str | Path = "outputs/run_logs",
+    skip_profile_comparison: bool = False,
+    profiles: str | list[str] | None = None,
+    reuse_processed_if_fresh: bool = False,
     defaults: OperationalDefaults = OPERATIONAL_DEFAULTS,
 ) -> dict[str, Any]:
     started = perf_counter()
@@ -136,6 +190,13 @@ def run_daily_pipeline(
     run_dir.mkdir(parents=True, exist_ok=True)
     warnings: list[str] = []
     download_status: list[dict[str, Any]] = []
+    timing: dict[str, float] = {
+        "download_seconds": 0.0,
+        "normalization_seconds": 0.0,
+        "slate_seconds": 0.0,
+        "audit_seconds": 0.0,
+        "total_duration_seconds": 0.0,
+    }
     generated: list[str] = []
     row_count = 0
     resolved_slate_type = slate_type
@@ -143,20 +204,21 @@ def run_daily_pipeline(
     error_message = ""
     raw_dir = Path(raw_input_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)
-    comparison_profiles = list(dict.fromkeys([
+    comparison_profiles = list(dict.fromkeys(_split_csv(profiles, (
         club_defaults.general_report_profile,
         club_defaults.primary_wdl_profile,
         "total_goals",
         "market_anchored",
         "model_only",
-    ]))
-    currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical")
+    ))))
+    currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical", slate_type=slate_type)
     season = check_season_sanity(selected_season, as_of_date, historical_mode=historical_mode or slate_type == "historical")
     warnings.extend(currentness["warnings"])
     if skip_download:
         warnings.append("Download skipped; using available local Football-Data CSVs.")
     else:
         try:
+            t0 = perf_counter()
             download = download_football_data_leagues(
                 season_code=selected_season,
                 fallback_season_code=selected_fallback,
@@ -169,7 +231,9 @@ def run_daily_pipeline(
                 warnings.append("Some Football-Data downloads failed; continued with available local files.")
         except Exception as exc:
             warnings.append(f"Football-Data download failed; continued with local files if usable: {exc}")
-        currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical")
+        finally:
+            timing["download_seconds"] = perf_counter() - t0
+        currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical", slate_type=slate_type)
         warnings.extend([w for w in currentness["warnings"] if w not in warnings])
     failure = _policy_failure(currentness["currentness_status"], currentness_policy)
     club = comparison = audit = international = None
@@ -179,7 +243,16 @@ def run_daily_pipeline(
             status = failure
             error_message = f"Currentness policy {currentness_policy} blocked run with status {currentness['currentness_status']}."
         else:
-            normalized = normalize_multi_league_football_data(raw_dir, output_path=processed_output, season="")
+            t0 = perf_counter()
+            if reuse_processed_if_fresh and skip_download and currentness.get("processed_freshness_status") == "fresh" and Path(processed_output).exists():
+                normalized = pd.read_csv(processed_output)
+                warnings.append("Reused fresh processed data; skipped normalization.")
+            else:
+                normalized = normalize_multi_league_football_data(raw_dir, output_path=processed_output, season="")
+                currentness = check_data_currentness(raw_dir, processed_output, as_of_date, selected_season, selected_leagues, historical_mode=historical_mode or slate_type == "historical", slate_type=slate_type)
+                warnings = _drop_obsolete_processed_warnings(warnings, currentness)
+                warnings.extend([w for w in currentness["warnings"] if w not in warnings])
+            timing["normalization_seconds"] = perf_counter() - t0
             if normalized.empty:
                 status = "failed_missing_data"
                 error_message = "No available Football-Data rows to normalize for the daily pipeline."
@@ -197,6 +270,7 @@ def run_daily_pipeline(
                     filtered.to_csv(normalized_run_path, index=False)
                     generated.append(str(normalized_run_path))
                     slate_profiles = [club_defaults.general_report_profile]
+                    t0 = perf_counter()
                     club = build_club_slate_report(
                         normalized_run_path,
                         as_of_date,
@@ -207,10 +281,12 @@ def run_daily_pipeline(
                         max_matches=selected_max,
                         matchups_csv=manual_club_matchups,
                     )
+                    timing["slate_seconds"] += perf_counter() - t0
                     resolved_slate_type = str(club["slate_type"])
                     generated.extend([str(club["markdown_path"]), str(club["csv_path"])])
                     matchup = _first_matchup(club["results"])
-                    if matchup:
+                    if matchup and not skip_profile_comparison:
+                        t0 = perf_counter()
                         comparison = compare_club_projection_profiles(
                             normalized_run_path,
                             matchup["home"],
@@ -221,9 +297,12 @@ def run_daily_pipeline(
                             projection_output_dir=run_dir,
                             league=matchup.get("league"),
                         )
+                        timing["slate_seconds"] += perf_counter() - t0
                         generated.extend([str(comparison["markdown_path"]), str(comparison["csv_path"])])
                     if run_quick_audit:
+                        t0 = perf_counter()
                         audit = run_leakage_audit(filtered, output_dir=run_dir)
+                        timing["audit_seconds"] = perf_counter() - t0
                         generated.append(str(audit["summary_path"]))
                         if not audit["leakage_checks_passed"]:
                             warnings.append("Quick leakage audit failed; inspect leakage_audit_summary.md.")
@@ -252,6 +331,8 @@ def run_daily_pipeline(
             row_counts = _row_counts(pd.read_csv(normalized_run_path))
         except Exception:
             pass
+    timing["total_duration_seconds"] = perf_counter() - started
+    warning_groups = _warning_groups(warnings + ([error_message] if error_message else []), currentness, include_international)
     summary_path = write_run_summary(
         run_dir / "run_summary.md",
         run_date=as_of_date,
@@ -261,12 +342,14 @@ def run_daily_pipeline(
         slate_type=resolved_slate_type,
         profiles=comparison_profiles,
         warnings=warnings + ([error_message] if error_message else []),
+        warning_groups=warning_groups,
         generated_files=generated,
         defaults=defaults,
         run_status=status,
         currentness=currentness,
         season_sanity=season,
         currentness_policy=currentness_policy,
+        timing=timing,
     )
     generated.append(str(summary_path))
     manifest = build_run_manifest(
@@ -287,6 +370,13 @@ def run_daily_pipeline(
         currentness_status=currentness["currentness_status"],
         season_sanity_status=season["season_sanity_status"],
         error_message=error_message,
+        timing=timing,
+        processed_freshness={
+            "processed_freshness_status": currentness.get("processed_freshness_status"),
+            "raw_latest_modified_at": currentness.get("raw_latest_modified_at"),
+            "processed_modified_at": currentness.get("processed_modified_at"),
+            "files_compared": currentness.get("files_compared"),
+        },
     )
     manifest_path = write_run_manifest(manifest, run_dir / "run_manifest.json")
     generated.append(str(manifest_path))
@@ -307,6 +397,7 @@ def run_daily_pipeline(
             len(warnings),
             error_message,
             perf_counter() - started,
+            timing,
         ),
         output_dir=run_log_dir,
     )
@@ -325,6 +416,8 @@ def run_daily_pipeline(
         "warnings": warnings,
         "generated_files": generated,
         "run_log_paths": log_paths,
+        "timing": timing,
+        "warning_groups": warning_groups,
     }
 
 
@@ -337,16 +430,20 @@ def write_run_summary(
     slate_type: str,
     profiles: list[str],
     warnings: list[str],
+    warning_groups: dict[str, list[str]] | None,
     generated_files: list[str],
     defaults: OperationalDefaults = OPERATIONAL_DEFAULTS,
     run_status: str = "success",
     currentness: dict[str, Any] | None = None,
     season_sanity: dict[str, Any] | None = None,
     currentness_policy: str = "warn",
+    timing: dict[str, float] | None = None,
 ) -> Path:
     currentness = currentness or {"currentness_status": "unknown"}
     season_sanity = season_sanity or {"season_sanity_status": "unknown"}
     trust_warning = currentness.get("currentness_status") in {"stale", "unsafe"} or run_status.startswith("failed")
+    warning_groups = warning_groups or {}
+    timing = timing or {}
     lines = [
         "# Daily Pipeline Run Summary",
         "",
@@ -377,6 +474,7 @@ def write_run_summary(
         f"- Proxy adjustments enabled: `{defaults.club.proxy_adjustments_enabled}`",
         f"- Confidence language: `{defaults.club.confidence_language}`",
         f"- Profiles run: {', '.join(profiles)}",
+        f"- Timing seconds: `{timing}`",
         "",
         "## Guardrails",
         "",
@@ -389,9 +487,22 @@ def write_run_summary(
         "",
         *[f"- `{file}`" for file in generated_files],
         "",
-        "## Warnings",
+        "## Warning Groups",
         "",
-        *([f"- {warning}" for warning in warnings] if warnings else ["- None"]),
+    ]
+    for title, values in [
+        ("Blocking Problems", warning_groups.get("blocking_problems", [])),
+        ("Data Currentness Notes", warning_groups.get("data_currentness_notes", [])),
+        ("League Completion Notes", warning_groups.get("league_completion_notes", [])),
+        ("Processed/Raw Freshness Notes", warning_groups.get("processed_raw_freshness_notes", [])),
+        ("International Notes", warning_groups.get("international_notes", [])),
+        ("Performance Notes", warning_groups.get("performance_notes", [])),
+        ("Guardrail Notes", warning_groups.get("guardrail_notes", [])),
+    ]:
+        lines.extend([f"### {title}", ""])
+        lines.extend([f"- {value}" for value in values] if values else ["- None"])
+        lines.append("")
+    lines.extend([
         "",
         "## Next Steps",
         "",
@@ -399,7 +510,7 @@ def write_run_summary(
         "- Treat totals as less settled than W/D/L until more calibration work is done.",
         "- Keep UI and style visuals deferred until operational output is stable.",
         "",
-    ]
+    ])
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(lines), encoding="utf-8")

@@ -38,7 +38,7 @@ from src.models.multi_season_validation import run_multi_season_validation
 from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
-from src.operational.currentness import check_data_currentness, format_currentness
+from src.operational.currentness import check_data_currentness, explain_currentness, format_currentness
 from src.operational.daily_runner import run_daily_pipeline
 from src.operational.defaults import explain_operational_defaults
 from src.operational.health_check import format_health_check, run_operational_health_check
@@ -318,6 +318,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--processed-output", default="data/processed/operational_current_match_results.csv")
     p.add_argument("--currentness-policy", choices=["warn", "fail-on-missing", "fail-on-stale", "fail-on-unsafe"], default="warn")
     p.add_argument("--historical-mode", action="store_true")
+    p.add_argument("--skip-profile-comparison", action="store_true")
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+    p.add_argument("--reuse-processed-if-fresh", action="store_true")
 
     p = sub.add_parser("check-data-currentness")
     p.add_argument("--raw-dir", default="data/raw/football-data")
@@ -325,6 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as-of-date", required=True)
     p.add_argument("--season-code", default="2526")
     p.add_argument("--leagues", default="E0,E1,SP1,D1,I1,F1")
+    p.add_argument("--slate-type", choices=["auto", "future", "historical", "manual"], default="auto")
     p.add_argument("--historical-mode", action="store_true")
     p.add_argument("--json", action="store_true")
 
@@ -334,6 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--historical-mode", action="store_true")
 
     sub.add_parser("explain-operational-defaults")
+    sub.add_parser("explain-currentness")
     sub.add_parser("operational-health-check")
 
     return parser
@@ -645,6 +650,9 @@ def main(argv: list[str] | None = None) -> None:
             processed_output=args.processed_output,
             currentness_policy=args.currentness_policy,
             historical_mode=args.historical_mode,
+            skip_profile_comparison=args.skip_profile_comparison,
+            profiles=args.profiles,
+            reuse_processed_if_fresh=args.reuse_processed_if_fresh,
         )
         print(f"Daily pipeline status: {result['status']}")
         print(f"Daily pipeline complete: run_dir={result['run_dir']}")
@@ -665,6 +673,7 @@ def main(argv: list[str] | None = None) -> None:
             season_code=args.season_code,
             leagues=args.leagues,
             historical_mode=args.historical_mode,
+            slate_type=args.slate_type,
         )
         _print_json(result) if args.json else print(format_currentness(result))
     elif args.command == "check-season-sanity":
@@ -672,6 +681,8 @@ def main(argv: list[str] | None = None) -> None:
         _print_json(result)
     elif args.command == "explain-operational-defaults":
         print(explain_operational_defaults())
+    elif args.command == "explain-currentness":
+        print(explain_currentness())
     elif args.command == "operational-health-check":
         print(format_health_check(run_operational_health_check()))
     elif args.command == "diagnose-baselines":

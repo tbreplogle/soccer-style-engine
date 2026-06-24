@@ -1,0 +1,17 @@
+{
+  "status": "success_with_warnings",
+  "currentness_status": "season_completed",
+  "processed_freshness": {
+    "processed_freshness_status": "fresh",
+    "raw_latest_modified_at": "2026-06-24T12:00:00+00:00",
+    "processed_modified_at": "2026-06-24T12:00:10+00:00",
+    "files_compared": ["data/raw/football-data/E0_2526.csv"]
+  },
+  "timing": {
+    "download_seconds": 0.0,
+    "normalization_seconds": 1.2,
+    "slate_seconds": 4.5,
+    "audit_seconds": 0.3,
+    "total_duration_seconds": 6.4
+  }
+}

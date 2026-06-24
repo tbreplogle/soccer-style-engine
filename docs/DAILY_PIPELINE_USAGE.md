@@ -9,6 +9,9 @@ Run a daily club slate:
 Useful options:
 
 - `--skip-download` uses local Football-Data CSVs only.
+- `--reuse-processed-if-fresh` skips normalization when processed data is newer than relevant raw CSVs.
+- `--skip-profile-comparison` avoids the slower comparison report.
+- `--profiles score_projection,winner_probability` narrows profile comparison work.
 - `--leagues E0,E1,SP1,D1,I1,F1` controls included leagues.
 - `--slate-type auto|future|historical|manual` controls matchup selection.
 - `--max-matches 20` limits the slate size.

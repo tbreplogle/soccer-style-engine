@@ -34,6 +34,8 @@ def build_run_manifest(
     currentness_status: str | None = None,
     season_sanity_status: str | None = None,
     error_message: str = "",
+    timing: dict[str, Any] | None = None,
+    processed_freshness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -43,6 +45,8 @@ def build_run_manifest(
         "currentness_status": currentness_status,
         "season_sanity_status": season_sanity_status,
         "error_message": error_message,
+        "timing": timing or {},
+        "processed_freshness": processed_freshness or {},
         "git_branch": _git_value(["branch", "--show-current"]),
         "git_commit": _git_value(["rev-parse", "--short", "HEAD"]),
         "input_files_used": input_files,

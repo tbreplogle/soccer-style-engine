@@ -20,6 +20,11 @@ RUN_LOG_COLUMNS = [
     "warnings_count",
     "error_message",
     "duration_seconds",
+    "download_seconds",
+    "normalization_seconds",
+    "slate_seconds",
+    "audit_seconds",
+    "total_duration_seconds",
 ]
 
 

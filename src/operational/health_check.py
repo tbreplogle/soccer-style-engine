@@ -57,7 +57,7 @@ def run_operational_health_check() -> dict[str, Any]:
     checks.append({"name": "generated_outputs_hidden", "passed": not visible, "message": "No generated outputs visible to git." if not visible else "; ".join(visible)})
     if visible:
         warnings.append("Some generated output paths are visible to git status.")
-    commands = ["run-daily-pipeline", "explain-operational-defaults", "operational-health-check", "check-data-currentness", "check-season-sanity"]
+    commands = ["run-daily-pipeline", "explain-operational-defaults", "explain-currentness", "operational-health-check", "check-data-currentness", "check-season-sanity"]
     checks.append({"name": "cli_commands_registered", "passed": True, "message": ", ".join(commands)})
     statsbomb = Path("data/raw/statsbomb-open-data/data").exists()
     checks.append({"name": "optional_statsbomb_root", "passed": True, "message": "StatsBomb root present." if statsbomb else "StatsBomb root not present; international daily run can be skipped."})
