@@ -12,7 +12,12 @@ from src.agents.team_identity_agent import classify_team_identity
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
 from src.data_ingestion.international_data import build_international_match_dataset, list_international_competitions
-from src.data_ingestion.multi_league_football_data import download_football_data_leagues, normalize_multi_league_football_data
+from src.data_ingestion.multi_league_football_data import (
+    download_football_data_leagues,
+    download_football_data_seasons,
+    normalize_multi_league_football_data,
+    normalize_multi_season_football_data,
+)
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
 from src.features.event_features import build_team_match_style_log
 from src.features.free_style_proxies import build_free_style_proxies
@@ -20,11 +25,16 @@ from src.features.team_aggregates import build_all_team_style_profiles, build_te
 from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
+from src.models.confidence_hardening import run_confidence_hardening
+from src.models.holdout_validation import run_holdout_validation
 from src.models.current_score_projection import project_current_match
 from src.models.international_backtest import run_international_backtest
+from src.models.international_validation import run_international_validation
 from src.models.international_projection import project_international_match
 from src.models.international_readiness import audit_international_readiness
+from src.models.leakage_audit import run_leakage_audit
 from src.models.multi_league_diagnostics import run_multi_league_profile_diagnostics
+from src.models.multi_season_validation import run_multi_season_validation
 from src.models.projection_profile_diagnostics import run_projection_profile_diagnostics
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
@@ -99,6 +109,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", required=True)
     p.add_argument("--season", default="")
 
+    p = sub.add_parser("download-football-data-seasons")
+    p.add_argument("--season-codes", default="2526,2425,2324,2223,2122")
+    p.add_argument("--leagues", default="E0,E1,SP1,D1,I1,F1")
+    p.add_argument("--output-dir", default="data/raw/football-data")
+
+    p = sub.add_parser("normalize-multi-season-football-data")
+    p.add_argument("--input", required=True)
+    p.add_argument("--output", required=True)
+
     p = sub.add_parser("build-free-proxies")
     p.add_argument("--input", required=True)
     p.add_argument("--as-of-date", required=True)
@@ -158,6 +177,43 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
     p.add_argument("--min-matches", type=int, default=6)
     p.add_argument("--monthly", action="store_true")
+
+    p = sub.add_parser("validate-multi-season-profiles")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+    p.add_argument("--min-matches", type=int, default=6)
+    p.add_argument("--monthly", action="store_true")
+    p.add_argument("--by-league", action="store_true")
+    p.add_argument("--by-season", action="store_true")
+
+    p = sub.add_parser("run-holdout-validation")
+    p.add_argument("--input", required=True)
+    p.add_argument("--train-seasons", required=True)
+    p.add_argument("--validation-season", required=True)
+    p.add_argument("--test-season", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+
+    p = sub.add_parser("harden-confidence")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--output-dir", default="outputs/reports")
+
+    p = sub.add_parser("audit-leakage")
+    p.add_argument("--input", required=True)
+    p.add_argument("--start-date")
+    p.add_argument("--end-date")
+    p.add_argument("--output-dir", default="outputs/reports")
+
+    p = sub.add_parser("validate-international")
+    p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
+    p.add_argument("--competition-name")
+    p.add_argument("--season-id")
+    p.add_argument("--max-matches", type=int, default=64)
+    p.add_argument("--output-dir", default="outputs/reports")
 
     p = sub.add_parser("audit-international-readiness")
     p.add_argument("--statsbomb-root", default="data/raw/statsbomb-open-data/data")
@@ -310,6 +366,18 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "normalize-multi-league-football-data":
         result = normalize_multi_league_football_data(args.input, output_path=args.output, season=args.season)
         print(f"Wrote {len(result)} normalized multi-league current rows to {args.output}")
+    elif args.command == "download-football-data-seasons":
+        season_codes = [code.strip() for code in args.season_codes.split(",") if code.strip()]
+        leagues = [league.strip() for league in args.leagues.split(",") if league.strip()]
+        result = download_football_data_seasons(
+            season_codes=season_codes,
+            leagues=leagues,
+            output_dir=args.output_dir,
+        )
+        print(result.to_string(index=False))
+    elif args.command == "normalize-multi-season-football-data":
+        result = normalize_multi_season_football_data(args.input, output_path=args.output)
+        print(f"Wrote {len(result)} normalized multi-season rows to {args.output}")
     elif args.command == "build-free-proxies":
         result = build_free_style_proxies(args.input, args.as_of_date)
         output = Path(args.output)
@@ -371,6 +439,54 @@ def main(argv: list[str] | None = None) -> None:
             profiles=profiles,
             min_matches=args.min_matches,
             monthly=args.monthly,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "validate-multi-season-profiles":
+        profiles = [profile.strip() for profile in args.profiles.split(",") if profile.strip()]
+        result = run_multi_season_validation(
+            args.input,
+            args.start_date,
+            args.end_date,
+            profiles=profiles,
+            min_matches=args.min_matches,
+            monthly=args.monthly,
+            by_league=args.by_league,
+            by_season=args.by_season,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "run-holdout-validation":
+        result = run_holdout_validation(
+            args.input,
+            train_seasons=args.train_seasons,
+            validation_season=args.validation_season,
+            test_season=args.test_season,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "harden-confidence":
+        result = run_confidence_hardening(
+            args.input,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "audit-leakage":
+        result = run_leakage_audit(
+            args.input,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            output_dir=args.output_dir,
+        )
+        print(result["report"])
+    elif args.command == "validate-international":
+        result = run_international_validation(
+            statsbomb_root=args.statsbomb_root,
+            competition_name=args.competition_name,
+            season_id=args.season_id,
+            max_matches=args.max_matches,
             output_dir=args.output_dir,
         )
         print(result["report"])
