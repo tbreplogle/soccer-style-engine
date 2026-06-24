@@ -29,6 +29,8 @@ from src.models.projection_profile_diagnostics import run_projection_profile_dia
 from src.models.proxy_diagnostics import run_proxy_diagnostics
 from src.models.score_projection import project_match
 from src.reports.real_data_validation import run_real_data_validation
+from src.reports.projection_report import compare_club_projection_profiles, compare_international_projection_profiles
+from src.reports.slate_report import build_club_slate_report, build_international_slate_report
 
 
 def _print_json(payload: object) -> None:
@@ -191,6 +193,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--season-id")
     p.add_argument("--output-dir", default="outputs/reports")
     p.add_argument("--min-prior-matches", type=int, default=5)
+
+    p = sub.add_parser("build-club-slate")
+    p.add_argument("--input", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--league")
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--projection-output-dir", default="outputs/projections")
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+    p.add_argument("--slate-type", choices=["auto", "future", "historical"], default="auto")
+    p.add_argument("--max-matches", type=int, default=20)
+    p.add_argument("--matchups-csv")
+
+    p = sub.add_parser("compare-club-profiles")
+    p.add_argument("--input", required=True)
+    p.add_argument("--home", required=True)
+    p.add_argument("--away", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--league")
+    p.add_argument("--profiles", default="score_projection,winner_probability,total_goals,market_anchored,model_only")
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--projection-output-dir", default="outputs/projections")
+
+    p = sub.add_parser("build-international-slate")
+    p.add_argument("--input", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--team-a")
+    p.add_argument("--team-b")
+    p.add_argument("--matchups-csv")
+    p.add_argument("--neutral-site", choices=["true", "false", "unknown"], default="unknown")
+    p.add_argument("--competition-context", default="")
+    p.add_argument("--profiles", default="international_score_projection,international_winner_probability,international_total_goals,international_event_style_context,international_model_only")
+    p.add_argument("--max-matches", type=int, default=20)
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--projection-output-dir", default="outputs/projections")
+
+    p = sub.add_parser("compare-international-profiles")
+    p.add_argument("--input", required=True)
+    p.add_argument("--team-a", required=True)
+    p.add_argument("--team-b", required=True)
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--neutral-site", choices=["true", "false", "unknown"], default="unknown")
+    p.add_argument("--competition-context", default="")
+    p.add_argument("--profiles", default="international_score_projection,international_winner_probability,international_total_goals,international_event_style_context,international_model_only")
+    p.add_argument("--output-dir", default="outputs/reports")
+    p.add_argument("--projection-output-dir", default="outputs/projections")
 
     return parser
 
@@ -367,6 +414,61 @@ def main(argv: list[str] | None = None) -> None:
             min_prior_matches=args.min_prior_matches,
         )
         print(result["summary"])
+    elif args.command == "build-club-slate":
+        result = build_club_slate_report(
+            args.input,
+            args.as_of_date,
+            league=args.league,
+            projection_profiles=args.profiles,
+            output_dir=args.output_dir,
+            projection_output_dir=args.projection_output_dir,
+            slate_type=args.slate_type,
+            max_matches=args.max_matches,
+            matchups_csv=args.matchups_csv,
+        )
+        print(f"Wrote {len(result['results'])} club slate projection rows to {result['csv_path']}")
+        print(f"Wrote club slate report to {result['markdown_path']}")
+    elif args.command == "compare-club-profiles":
+        result = compare_club_projection_profiles(
+            args.input,
+            args.home,
+            args.away,
+            args.as_of_date,
+            profiles=args.profiles,
+            output_dir=args.output_dir,
+            projection_output_dir=args.projection_output_dir,
+            league=args.league,
+        )
+        print(result["results"].to_string(index=False))
+    elif args.command == "build-international-slate":
+        result = build_international_slate_report(
+            args.input,
+            args.as_of_date,
+            neutral_site=args.neutral_site,
+            projection_profiles=args.profiles,
+            output_dir=args.output_dir,
+            projection_output_dir=args.projection_output_dir,
+            team_a=args.team_a,
+            team_b=args.team_b,
+            competition_context=args.competition_context,
+            matchups_csv=args.matchups_csv,
+            max_matches=args.max_matches,
+        )
+        print(f"Wrote {len(result['results'])} international slate projection rows to {result['csv_path']}")
+        print(f"Wrote international slate report to {result['markdown_path']}")
+    elif args.command == "compare-international-profiles":
+        result = compare_international_projection_profiles(
+            args.input,
+            args.team_a,
+            args.team_b,
+            args.as_of_date,
+            neutral_site=args.neutral_site,
+            competition_context=args.competition_context,
+            profiles=args.profiles,
+            output_dir=args.output_dir,
+            projection_output_dir=args.projection_output_dir,
+        )
+        print(result["results"].to_string(index=False))
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(
