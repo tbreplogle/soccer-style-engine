@@ -37,3 +37,13 @@ Those future style-aware matchup inputs are not present in the Phase 24 fixture 
 6. historical StatsBomb validation
 7. style-aware score projection reports
 8. optional visual layers only after projections prove useful
+
+## Phase 25 Checkpoint
+
+Phase 25 reviews projection outputs before adding style adjustments. It checks projection totals, score/probability shape, confidence, data support, missing values, warning language, and style-input availability.
+
+The checkpoint makes the baseline explicit: current World Cup/international outputs can be rating-aware and fixture-aware, but style-aware adjustments remain inactive unless measurable style inputs are present.
+
+The intended output path is style-aware projected xG into a Poisson probability board. Future style-aware matchup logic should improve the projected home xG and away xG inputs; Poisson then turns those xG values into 1X2, totals, BTTS, clean sheet, and correct-score probabilities.
+
+Sample fixtures are demo-only and must be explicitly enabled. Manual fixtures are user supplied and should stay labeled as such.

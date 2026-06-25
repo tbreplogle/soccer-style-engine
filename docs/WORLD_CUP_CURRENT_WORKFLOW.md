@@ -31,3 +31,15 @@ The default manual sample demonstrates workflow mechanics only. It does not clai
 SofaScore fixture-only rows remain low support. SofaScore stats can raise support only when actual parsed statistic fields exist.
 TheStatsAPI is not part of the Phase 24 no-signup default workflow.
 
+## Projection Checkpoint
+
+After building current international projections, run the Phase 25 checkpoint to review totals, likely scores, W/D/L probability sums, confidence labels, support labels, missing data, and style-input warnings:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli projection-results-checkpoint --as-of-date 2026-06-24 --run-current-international --no-network --max-matches 10
+```
+
+The checkpoint establishes the rating/fixture baseline that future style adjustments must beat. It does not make the current backbone style-aware.
+
+Committed sample fixtures are not treated as real current games by default. Use `--allow-sample-data` only for demo output. When Poisson output is requested, projected team xG is converted into a probability board; future style-aware logic should improve those xG inputs rather than replacing the probability board itself.
+

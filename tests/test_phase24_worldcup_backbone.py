@@ -76,6 +76,7 @@ def test_worldcup_backbone_no_network_uses_samples(tmp_path):
     result = build_worldcup_backbone(
         as_of_date="2026-06-24",
         allow_network=False,
+        allow_sample_data=True,
         output_dir=tmp_path,
     )
     assert result["manifest"]["readiness_status"] == "ready_fixture_and_rating"
@@ -99,6 +100,7 @@ def test_build_worldcup_backbone_cli_exists_and_runs(tmp_path):
             "--as-of-date",
             "2026-06-24",
             "--no-network",
+            "--allow-sample-data",
             "--output-dir",
             str(tmp_path),
         ],
@@ -112,7 +114,7 @@ def test_build_worldcup_backbone_cli_exists_and_runs(tmp_path):
 
 def test_current_audit_and_projection_use_backbone(tmp_path):
     audit = subprocess.run(
-        [sys.executable, "-m", "src.cli", "audit-current-international", "--as-of-date", "2026-06-24", "--output-dir", str(tmp_path / "audit")],
+        [sys.executable, "-m", "src.cli", "audit-current-international", "--as-of-date", "2026-06-24", "--allow-sample-data", "--output-dir", str(tmp_path / "audit")],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -121,7 +123,7 @@ def test_current_audit_and_projection_use_backbone(tmp_path):
     assert "Fixtures found: 3" in audit.stdout
     assert "Ratings found:" in audit.stdout
     projection = subprocess.run(
-        [sys.executable, "-m", "src.cli", "project-current-international", "--as-of-date", "2026-06-24", "--no-network", "--max-matches", "10", "--output-dir", str(tmp_path / "proj")],
+        [sys.executable, "-m", "src.cli", "project-current-international", "--as-of-date", "2026-06-24", "--no-network", "--allow-sample-data", "--max-matches", "10", "--output-dir", str(tmp_path / "proj")],
         cwd=ROOT,
         capture_output=True,
         text=True,

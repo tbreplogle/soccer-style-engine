@@ -17,10 +17,21 @@ RUN_OUTPUT_NAMES = (
     "leakage_audit_summary.md",
 )
 
+CHECKPOINT_OUTPUT_NAMES = (
+    "projection_checkpoint_manifest.json",
+    "projection_checkpoint_summary.md",
+    "projection_checkpoint_rows.csv",
+    "projection_checkpoint_flags.csv",
+    "poisson/poisson_summary.md",
+    "poisson/poisson_match_summary.csv",
+    "poisson/poisson_correct_score_matrix.csv",
+)
+
 
 def _empty_entry(run_dir: Path, error: str = "") -> dict[str, Any]:
     present = sorted(path.name for path in run_dir.iterdir()) if run_dir.exists() and run_dir.is_dir() else []
     return {
+        "entry_type": "daily_run",
         "run_date": run_dir.name,
         "run_id": run_dir.name,
         "generated_at": "",
@@ -55,6 +66,7 @@ def _manifest_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     summary_path = run_dir / "run_summary.md"
     present = [name for name in RUN_OUTPUT_NAMES if (run_dir / name).exists()]
     return {
+        "entry_type": "daily_run",
         "run_date": str(manifest.get("run_date") or run_dir.name),
         "run_id": str(manifest.get("run_id") or run_dir.name),
         "generated_at": str(manifest.get("generated_at") or ""),
@@ -74,10 +86,42 @@ def _manifest_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     }
 
 
-def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, Any]]:
-    root = Path(runs_root)
-    if not root.exists() or not root.is_dir():
-        return []
+def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(checkpoint_dir, "malformed_checkpoint_manifest")
+        entry["entry_type"] = "projection_checkpoint"
+        entry["status"] = "malformed_checkpoint_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+
+    present = [name for name in CHECKPOINT_OUTPUT_NAMES if (checkpoint_dir / name).exists()]
+    warnings_count = int(manifest.get("warning_count") or 0)
+    return {
+        "entry_type": "projection_checkpoint",
+        "run_date": str(manifest.get("run_date") or checkpoint_dir.name),
+        "run_id": str(manifest.get("run_id") or f"projection_checkpoint_{checkpoint_dir.name}"),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("status") or "unknown"),
+        "currentness_status": "projection_checkpoint",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": int(manifest.get("rows_reviewed") or 0),
+        "slate_type": "projection_checkpoint",
+        "warnings_count": warnings_count,
+        "warnings": [f"{warnings_count} projection checkpoint warning flags"] if warnings_count else [],
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(checkpoint_dir / "projection_checkpoint_summary.md") if (checkpoint_dir / "projection_checkpoint_summary.md").exists() else "",
+        "run_dir": str(checkpoint_dir),
+        "error": "",
+        "source_projection_file": str(manifest.get("source_projection_file") or ""),
+    }
+
+
+def _iter_run_entries(root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
         if not any(run_dir.iterdir()):
@@ -88,14 +132,45 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
             entries.append(_empty_entry(run_dir, "missing_manifest"))
             continue
         entries.append(_manifest_entry(run_dir, manifest_path))
+    return entries
+
+
+def _iter_checkpoint_entries(root: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if not root.exists() or not root.is_dir():
+        return entries
+    for checkpoint_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
+        manifest_path = checkpoint_dir / "projection_checkpoint_manifest.json"
+        if manifest_path.exists():
+            entries.append(_checkpoint_entry(checkpoint_dir, manifest_path))
+    return entries
+
+
+def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, Any]]:
+    root = Path(runs_root)
+    if not root.exists() or not root.is_dir():
+        return []
+    entries: list[dict[str, Any]] = []
+    run_roots = [root]
+    if (root / "runs").exists() and root.name != "runs":
+        run_roots = [root / "runs"]
+    elif (root / "projection_checkpoints").exists() and root.name != "runs":
+        run_roots = []
+    for run_root in run_roots:
+        if run_root.exists() and run_root.is_dir():
+            entries.extend(_iter_run_entries(run_root))
+
+    checkpoint_root = root if root.name == "projection_checkpoints" else root / "projection_checkpoints"
+    entries.extend(_iter_checkpoint_entries(checkpoint_root))
     return sorted(entries, key=lambda item: (item.get("run_date", ""), item.get("generated_at", "")), reverse=True)
 
 
 def format_run_index_table(entries: list[dict[str, Any]]) -> str:
-    headers = ["date", "status", "currentness", "rows", "warnings", "slate_type"]
+    headers = ["date", "type", "status", "currentness", "rows", "warnings", "slate_type"]
     rows = [
         [
             item.get("run_date", ""),
+            item.get("entry_type", "daily_run"),
             item.get("status", ""),
             item.get("currentness_status", ""),
             str(item.get("row_count", 0)),

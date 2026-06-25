@@ -35,6 +35,9 @@ outputs/source_probes/**
 outputs/current_international/
 outputs/current_international/*
 outputs/current_international/**
+outputs/projection_checkpoints/
+outputs/projection_checkpoints/*
+outputs/projection_checkpoints/**
 data/source_cache/
 data/source_cache/*
 data/source_cache/**

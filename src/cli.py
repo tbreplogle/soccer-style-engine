@@ -10,6 +10,7 @@ import pandas as pd
 from src.agents.free_proxy_matchup_agent import analyze_free_proxy_matchup
 from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
+from src.analysis.projection_checkpoint import format_checkpoint_terminal, run_projection_checkpoint
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
 from src.data_ingestion.international_data import build_international_match_dataset, list_international_competitions
@@ -408,9 +409,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--competition", default="FIFA World Cup")
     p.add_argument("--allow-network", action="store_true")
     p.add_argument("--no-network", action="store_true", default=True)
-    p.add_argument("--fixture-source", default="data/sample/worldcup_static_fixtures_openfootball_sample.json")
-    p.add_argument("--ratings-source", default="data/sample/eloratings_sample.csv")
+    p.add_argument("--fixture-source", default="data/source_cache/openfootball/openfootball_worldcup.json")
+    p.add_argument("--ratings-source", default="data/source_cache/eloratings/eloratings_current.csv")
     p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--allow-sample-data", action="store_true")
 
     p = sub.add_parser("audit-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -419,6 +421,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--competition", default="FIFA World Cup")
     p.add_argument("--manual-matchups")
     p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--allow-sample-data", action="store_true")
 
     p = sub.add_parser("build-current-international-slate")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -427,6 +430,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--competition", default="FIFA World Cup")
     p.add_argument("--manual-matchups")
     p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--allow-sample-data", action="store_true")
 
     p = sub.add_parser("project-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -436,6 +440,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manual-matchups")
     p.add_argument("--max-matches", type=int, default=10)
     p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--allow-sample-data", action="store_true")
+
+    p = sub.add_parser("projection-results-checkpoint")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--projection-file")
+    p.add_argument("--run-current-international", action="store_true")
+    p.add_argument("--manual-matchups")
+    p.add_argument("--max-matches", type=int, default=10)
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--output-dir", default="outputs/projection_checkpoints")
+    p.add_argument("--build-viewer", action="store_true")
+    p.add_argument("--allow-sample-data", action="store_true")
+    p.add_argument("--build-poisson-board", action="store_true")
+    p.add_argument("--max-goals", type=int, default=6)
 
     return parser
 
@@ -884,6 +903,7 @@ def main(argv: list[str] | None = None) -> None:
             as_of_date=args.as_of_date,
             competition=args.competition,
             allow_network=args.allow_network,
+            allow_sample_data=args.allow_sample_data,
             fixture_source=args.fixture_source,
             ratings_source=args.ratings_source,
             output_dir=args.output_dir,
@@ -903,6 +923,7 @@ def main(argv: list[str] | None = None) -> None:
             competition=args.competition,
             manual_matchups=args.manual_matchups,
             allow_network=args.allow_network,
+            allow_sample_data=args.allow_sample_data,
             output_dir=args.output_dir,
         )
         counts = result["manifest"]["source_status_counts"]
@@ -917,6 +938,7 @@ def main(argv: list[str] | None = None) -> None:
             competition=args.competition,
             manual_matchups=args.manual_matchups,
             allow_network=args.allow_network,
+            allow_sample_data=args.allow_sample_data,
             output_dir=args.output_dir,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
@@ -929,6 +951,7 @@ def main(argv: list[str] | None = None) -> None:
             competition=args.competition,
             manual_matchups=args.manual_matchups,
             allow_network=args.allow_network,
+            allow_sample_data=args.allow_sample_data,
             max_matches=args.max_matches,
             output_dir=args.output_dir,
         )
@@ -941,6 +964,21 @@ def main(argv: list[str] | None = None) -> None:
         if not result["projections"].empty:
             columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level"]
             print(result["projections"][columns].to_string(index=False))
+    elif args.command == "projection-results-checkpoint":
+        result = run_projection_checkpoint(
+            as_of_date=args.as_of_date,
+            projection_file=args.projection_file,
+            run_current_international=args.run_current_international,
+            manual_matchups=args.manual_matchups,
+            max_matches=args.max_matches,
+            allow_network=args.allow_network,
+            allow_sample_data=args.allow_sample_data,
+            output_dir=args.output_dir,
+            build_viewer=args.build_viewer,
+            build_poisson_board=args.build_poisson_board,
+            max_goals=args.max_goals,
+        )
+        print(format_checkpoint_terminal(result))
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

@@ -94,6 +94,8 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "club_slate_report.md",
             run_dir / "international_slate_report.md",
             run_dir / "projection_profile_comparison.md",
+            run_dir / "projection_checkpoint_summary.md",
+            run_dir / "poisson" / "poisson_summary.md",
         ] if path.exists()
     ]
     safety = scan_report_safety(markdown_paths)
@@ -101,7 +103,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         "<!doctype html><html><head><meta charset=\"utf-8\">",
         f"<title>Run {escape_html(run_id)}</title>",
         f"<style>{CSS}</style></head><body>",
-        f"<header><h1>Run {escape_html(run_id)}</h1><p>Run date {escape_html(entry.get('run_date'))} | Generated {escape_html(entry.get('generated_at'))}</p></header><main>",
+        f"<header><h1>{escape_html(entry.get('entry_type') or 'Run')} {escape_html(run_id)}</h1><p>Run date {escape_html(entry.get('run_date'))} | Generated {escape_html(entry.get('generated_at'))}</p></header><main>",
         "<div class=\"notice\"><strong>Guardrail:</strong> This viewer reads generated outputs only. It does not recompute projections, create betting recommendations, or claim proxy metrics are true event/tracking style.</div>",
         "<div class=\"notice\"><strong>Interpretation:</strong> probability and support fields are Data Support / Risk Context, not certainty and not a recommendation.</div>",
         "<section class=\"grid\">",
@@ -124,6 +126,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Club Slate", "club_slate_projections.csv"),
         ("International Slate", "international_slate_projections.csv"),
         ("Profile Comparison", "projection_profile_comparison.csv"),
+        ("Projection Checkpoint Rows", "projection_checkpoint_rows.csv"),
+        ("Projection Checkpoint Flags", "projection_checkpoint_flags.csv"),
+        ("Poisson Match Summary", "poisson/poisson_match_summary.csv"),
+        ("Poisson Correct Score Matrix", "poisson/poisson_correct_score_matrix.csv"),
     ]:
         path = run_dir / filename
         if path.exists():
@@ -143,7 +149,7 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         return "<p class=\"muted\">No runs found.</p>"
     latest_run_id = entries[0].get("run_id")
     rows = ["<div class=\"table-wrap\"><table><thead><tr>"]
-    for header in ["date", "status", "currentness", "season", "rows", "warnings", "slate_type", "detail"]:
+    for header in ["date", "type", "status", "currentness", "season", "rows", "warnings", "slate_type", "detail"]:
         rows.append(f"<th>{escape_html(header)}</th>")
     rows.append("</tr></thead><tbody>")
     for entry in entries:
@@ -151,6 +157,7 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         cls = " class=\"latest\"" if run_id == latest_run_id else ""
         rows.append(f"<tr{cls}>")
         rows.append(f"<td>{escape_html(entry.get('run_date'))}</td>")
+        rows.append(f"<td>{escape_html(entry.get('entry_type') or 'daily_run')}</td>")
         rows.append(f"<td><span class=\"{_status_class(entry.get('status'))}\">{escape_html(entry.get('status'))}</span></td>")
         rows.append(f"<td><span class=\"{_status_class(entry.get('currentness_status'))}\">{escape_html(entry.get('currentness_status'))}</span></td>")
         rows.append(f"<td>{escape_html(entry.get('season_sanity_status'))}</td>")
