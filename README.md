@@ -19,6 +19,7 @@ The project rule remains:
 - Build a Poisson probability board from projected team xG for projection review.
 - Open readable Poisson board pages from the static viewer for checkpoint runs.
 - Audit current international fixture/rating/stat source coverage from local public-source caches.
+- Seed current international source caches from public no-login/no-key connectors.
 - Keep no-betting guardrails active by default.
 
 ## What It Does Not Do Yet
@@ -122,6 +123,7 @@ Commit source, tests, docs, scripts, examples, and sample input fixtures.
 - `docs/V1_RUN_CHECKLIST.md`
 - `docs/POISSON_BOARD_VIEWER.md`
 - `docs/CURRENT_INTERNATIONAL_SOURCE_HARVEST.md`
+- `docs/CURRENT_INTERNATIONAL_CACHE_SEEDING.md`
 
 ## Roadmap
 

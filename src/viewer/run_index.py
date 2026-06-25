@@ -43,6 +43,15 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "source_audit/stat_coverage.csv",
     "source_audit/match_data_coverage.csv",
     "source_audit/source_audit_summary.md",
+    "cache_seed/cache_seed_summary.md",
+    "cache_seed/fixture_seed_results.csv",
+    "cache_seed/rating_seed_results.csv",
+    "cache_seed/stat_seed_results.csv",
+    "cache_seed/source_fetch_results.csv",
+    "cache_seed/rating_parse_diagnostics.csv",
+    "cache_seed/parsed_fixture_rows.csv",
+    "cache_seed/parsed_rating_rows.csv",
+    "cache_seed/parsed_stat_rows.csv",
 )
 
 

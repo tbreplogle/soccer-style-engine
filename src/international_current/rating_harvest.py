@@ -88,7 +88,9 @@ def harvest_current_international_ratings(
     cache = Path(cache_dir)
     audit_rows: list[SourceAuditRow] = []
     ratings: list[CurrentInternationalTeamRating] = []
-    local_path = cache / "ratings.csv"
+    local_path = cache / "parsed" / "ratings.csv"
+    if not local_path.exists():
+        local_path = cache / "ratings.csv"
     if local_path.exists() and (allow_sample_data or not _is_sample_path(local_path)):
         try:
             ratings.extend(_parse_rating_cache(local_path))

@@ -559,8 +559,7 @@ def build_current_international_slate(
                 scores.append(0)
                 missing.append("coverage_row_missing")
                 continue
-            score = sum(1 for key in ["fixture_found", "home_rating_found", "away_rating_found", "home_current_stats_found", "away_current_stats_found", "xg_available", "shots_available"] if bool(item.get(key)))
-            scores.append(round(score / 7, 3))
+            scores.append(item.get("data_coverage_score", 0))
             missing.append(item.get("missing_items", ""))
         frame["data_coverage_score"] = scores
         frame["missing_data_summary"] = missing

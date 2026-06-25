@@ -81,7 +81,9 @@ def harvest_current_international_stats(
     cache_dir: str | Path = "data/source_cache/current_international",
 ) -> dict[str, Any]:
     cache = Path(cache_dir)
-    path = cache / "stats.csv"
+    path = cache / "parsed" / "stats.csv"
+    if not path.exists():
+        path = cache / "stats.csv"
     audit_rows: list[SourceAuditRow] = []
     if path.exists():
         try:

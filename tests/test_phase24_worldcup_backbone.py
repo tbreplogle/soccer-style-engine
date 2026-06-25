@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,12 @@ from src.operational.defaults import OPERATIONAL_DEFAULTS
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.quick
+
+
+def _seed_sample_current_cache(cache_dir: Path) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "data" / "sample" / "worldcup_static_fixtures_openfootball_sample.json", cache_dir / "fixtures.json")
+    shutil.copyfile(ROOT / "data" / "sample" / "eloratings_sample.csv", cache_dir / "ratings.csv")
 
 
 def test_openfootball_sample_fixture_parser_and_dedupe():
@@ -113,8 +120,22 @@ def test_build_worldcup_backbone_cli_exists_and_runs(tmp_path):
 
 
 def test_current_audit_and_projection_use_backbone(tmp_path):
+    cache_dir = tmp_path / "sample" / "cache"
+    _seed_sample_current_cache(cache_dir)
     audit = subprocess.run(
-        [sys.executable, "-m", "src.cli", "audit-current-international", "--as-of-date", "2026-06-24", "--allow-sample-data", "--output-dir", str(tmp_path / "audit")],
+        [
+            sys.executable,
+            "-m",
+            "src.cli",
+            "audit-current-international",
+            "--as-of-date",
+            "2026-06-24",
+            "--allow-sample-data",
+            "--cache-dir",
+            str(cache_dir),
+            "--output-dir",
+            str(tmp_path / "audit"),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -123,7 +144,22 @@ def test_current_audit_and_projection_use_backbone(tmp_path):
     assert "Fixtures found: 3" in audit.stdout
     assert "Ratings found:" in audit.stdout
     projection = subprocess.run(
-        [sys.executable, "-m", "src.cli", "project-current-international", "--as-of-date", "2026-06-24", "--no-network", "--allow-sample-data", "--max-matches", "10", "--output-dir", str(tmp_path / "proj")],
+        [
+            sys.executable,
+            "-m",
+            "src.cli",
+            "project-current-international",
+            "--as-of-date",
+            "2026-06-24",
+            "--no-network",
+            "--allow-sample-data",
+            "--max-matches",
+            "10",
+            "--cache-dir",
+            str(cache_dir),
+            "--output-dir",
+            str(tmp_path / "proj"),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,

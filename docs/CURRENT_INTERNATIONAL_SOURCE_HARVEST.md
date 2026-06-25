@@ -2,6 +2,8 @@
 
 Phase 27 adds a source-audit and local-cache harvest layer for current international fixtures, ratings, and basic stats.
 
+Phase 28 adds `seed-current-international-cache`, which attempts public no-login/no-key source connectors and writes raw/parsed cache files for this audit layer.
+
 The normal workflow now tries real cached/current sources before manual fallback. Manual matchups remain available, but they are not used unless `--manual-matchups` is provided. Sample data still requires `--allow-sample-data`.
 
 ## Source Ladder
@@ -33,6 +35,12 @@ No-network audit:
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.cli audit-current-international-sources --as-of-date 2026-06-25 --no-network
+```
+
+Seed caches before auditing:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli seed-current-international-cache --as-of-date 2026-06-25 --all --allow-network
 ```
 
 Projection with strict real-data checks:

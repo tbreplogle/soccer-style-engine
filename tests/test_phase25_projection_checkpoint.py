@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,12 @@ from src.viewer.static_viewer import build_static_viewer
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.quick
+
+
+def _seed_sample_current_cache(cache_dir: Path) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "data" / "sample" / "worldcup_static_fixtures_openfootball_sample.json", cache_dir / "fixtures.json")
+    shutil.copyfile(ROOT / "data" / "sample" / "eloratings_sample.csv", cache_dir / "ratings.csv")
 
 
 def _projection_rows() -> pd.DataFrame:
@@ -130,6 +137,7 @@ def test_projection_results_checkpoint_cli_smoke(tmp_path):
 
 
 def test_projection_checkpoint_can_run_current_international_no_network(tmp_path):
+    cache_dir = tmp_path / "empty_cache"
     result = subprocess.run(
         [
             sys.executable,
@@ -142,6 +150,8 @@ def test_projection_checkpoint_can_run_current_international_no_network(tmp_path
             "--no-network",
             "--max-matches",
             "5",
+            "--cache-dir",
+            str(cache_dir),
             "--output-dir",
             str(tmp_path / "projection_checkpoints"),
         ],
@@ -159,6 +169,8 @@ def test_projection_checkpoint_can_run_current_international_no_network(tmp_path
 
 
 def test_projection_checkpoint_allows_sample_demo_but_marks_rows(tmp_path):
+    cache_dir = tmp_path / "sample" / "cache"
+    _seed_sample_current_cache(cache_dir)
     result = subprocess.run(
         [
             sys.executable,
@@ -173,6 +185,8 @@ def test_projection_checkpoint_allows_sample_demo_but_marks_rows(tmp_path):
             "--max-matches",
             "5",
             "--build-poisson-board",
+            "--cache-dir",
+            str(cache_dir),
             "--output-dir",
             str(tmp_path / "projection_checkpoints"),
         ],
@@ -190,6 +204,7 @@ def test_projection_checkpoint_allows_sample_demo_but_marks_rows(tmp_path):
 
 
 def test_projection_checkpoint_manual_rows_are_not_sample(tmp_path):
+    cache_dir = tmp_path / "empty_cache"
     result = subprocess.run(
         [
             sys.executable,
@@ -205,6 +220,8 @@ def test_projection_checkpoint_manual_rows_are_not_sample(tmp_path):
             "--max-matches",
             "5",
             "--build-poisson-board",
+            "--cache-dir",
+            str(cache_dir),
             "--output-dir",
             str(tmp_path / "projection_checkpoints"),
         ],

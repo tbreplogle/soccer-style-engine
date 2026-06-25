@@ -61,11 +61,12 @@ def _is_sample_path(path: Path) -> bool:
 
 
 def _fixture_from_row(row: dict[str, str], source_name: str, source_path: Path) -> CurrentInternationalFixture:
+    actual_source = row.get("source_name") or source_name
     home, away, warnings = normalize_team_pair(row.get("home_team") or row.get("team_a") or "", row.get("away_team") or row.get("team_b") or "")
     sample = _is_sample_path(source_path)
     return CurrentInternationalFixture(
-        source_name=source_name,
-        source_match_id=row.get("source_match_id") or row.get("id") or f"{source_name}-{home}-{away}",
+        source_name=actual_source,
+        source_match_id=row.get("source_match_id") or row.get("id") or f"{actual_source}-{home}-{away}",
         competition=row.get("competition") or "FIFA World Cup",
         season=row.get("season") or "",
         match_date=row.get("match_date") or row.get("date") or "",
@@ -143,7 +144,8 @@ def harvest_current_international_fixtures(
     audit_rows: list[SourceAuditRow] = []
     fixtures: list[CurrentInternationalFixture] = []
 
-    candidates = [
+    parsed_fixture_cache = cache / "parsed" / "fixtures.csv"
+    candidates = [("seeded_parsed_fixture_cache", parsed_fixture_cache)] if parsed_fixture_cache.exists() else [
         ("local_current_international_fixture_cache", cache / "fixtures.csv"),
         ("local_current_international_fixture_cache", cache / "fixtures.json"),
     ]

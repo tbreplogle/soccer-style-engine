@@ -375,6 +375,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "current_international_source_summary.md",
             run_dir / "current_international_projection_report.md",
             run_dir / "source_audit" / "source_audit_summary.md",
+            run_dir / "cache_seed" / "cache_seed_summary.md",
         ] if path.exists()
     ]
     safety = scan_report_safety(markdown_paths)
@@ -422,6 +423,14 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Rating Coverage", "source_audit/rating_coverage.csv"),
         ("Stat Coverage", "source_audit/stat_coverage.csv"),
         ("Match Data Coverage", "source_audit/match_data_coverage.csv"),
+        ("Fixture Seed Results", "cache_seed/fixture_seed_results.csv"),
+        ("Rating Seed Results", "cache_seed/rating_seed_results.csv"),
+        ("Stat Seed Results", "cache_seed/stat_seed_results.csv"),
+        ("Source Fetch Results", "cache_seed/source_fetch_results.csv"),
+        ("Rating Parse Diagnostics", "cache_seed/rating_parse_diagnostics.csv"),
+        ("Parsed Fixture Rows", "cache_seed/parsed_fixture_rows.csv"),
+        ("Parsed Rating Rows", "cache_seed/parsed_rating_rows.csv"),
+        ("Parsed Stat Rows", "cache_seed/parsed_stat_rows.csv"),
         ("Poisson Match Summary", "poisson/poisson_match_summary.csv"),
         ("Poisson Correct Score Matrix", "poisson/poisson_correct_score_matrix.csv"),
     ]:

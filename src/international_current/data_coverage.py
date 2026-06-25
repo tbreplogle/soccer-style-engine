@@ -27,6 +27,38 @@ def _support_label(fixture_found: bool, home_rating: bool, away_rating: bool, st
     return "insufficient"
 
 
+def _coverage_score(
+    *,
+    source_tier: str,
+    fixture_found: bool,
+    home_rating: bool,
+    away_rating: bool,
+    home_stats: bool,
+    away_stats: bool,
+    xg_available: bool,
+    lineup_available: bool = False,
+    injury_available: bool = False,
+) -> int:
+    score = 0
+    if fixture_found and source_tier == "real":
+        score += 40
+    elif fixture_found and source_tier == "manual":
+        score += 15
+    if home_rating and away_rating:
+        score += 30
+    elif home_rating or away_rating:
+        score += 15
+    if home_stats and away_stats:
+        score += 15
+    if xg_available:
+        score += 15
+    if lineup_available or injury_available:
+        score += 5
+    if source_tier == "sample":
+        score = min(score, 10)
+    return min(score, 100)
+
+
 def build_match_data_coverage(
     fixtures: pd.DataFrame,
     ratings: pd.DataFrame,
@@ -72,6 +104,15 @@ def build_match_data_coverage(
             missing.append("xg")
         if not shots_available:
             missing.append("shots")
+        score = _coverage_score(
+            source_tier=source_tier,
+            fixture_found=True,
+            home_rating=home_rating,
+            away_rating=away_rating,
+            home_stats=home_stats,
+            away_stats=away_stats,
+            xg_available=xg_available,
+        )
         rows.append({
             "match_date": fixture.get("match_date", ""),
             "home_team": home,
@@ -86,6 +127,7 @@ def build_match_data_coverage(
             "lineup_available": False,
             "injury_available": False,
             "style_inputs_available": False,
+            "data_coverage_score": score,
             "data_support_level": _support_label(True, home_rating, away_rating, home_stats and away_stats, xg_available, source_tier),
             "missing_items": "; ".join(missing),
             "recommended_next_source": "rating cache" if not (home_rating and away_rating) else "basic stat/xG source" if not xg_available else "style-aware validation",

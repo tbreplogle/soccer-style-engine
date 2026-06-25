@@ -31,6 +31,7 @@ from src.international_current.current_international_slate import (
     build_current_international_slate,
     project_current_international,
 )
+from src.international_current.sources import seed_current_international_cache
 from src.international_current.worldcup_fixture_backbone import build_worldcup_backbone
 from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
@@ -470,6 +471,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--strict-real-data", action="store_true")
     p.add_argument("--build-poisson-board", action="store_true")
 
+    p = sub.add_parser("seed-current-international-cache")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--fixtures", action="store_true")
+    p.add_argument("--ratings", action="store_true")
+    p.add_argument("--stats", action="store_true")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--force-refresh", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--max-sources", type=int)
+    p.add_argument("--max-matches", type=int)
+    p.add_argument("--strict", action="store_true")
+
     p = sub.add_parser("projection-results-checkpoint")
     p.add_argument("--as-of-date", default=date.today().isoformat())
     p.add_argument("--projection-file")
@@ -478,6 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-matches", type=int, default=10)
     p.add_argument("--no-network", action="store_true", default=True)
     p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
     p.add_argument("--output-dir", default="outputs/projection_checkpoints")
     p.add_argument("--build-viewer", action="store_true")
     p.add_argument("--allow-sample-data", action="store_true")
@@ -1016,6 +1033,31 @@ def main(argv: list[str] | None = None) -> None:
         if not result["projections"].empty:
             columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level", "rating_status", "data_coverage_score"]
             print(result["projections"][columns].to_string(index=False))
+    elif args.command == "seed-current-international-cache":
+        result = seed_current_international_cache(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            allow_network=args.allow_network,
+            seed_fixtures=args.fixtures,
+            seed_ratings=args.ratings,
+            seed_stats=args.stats,
+            seed_all=args.all,
+            force_refresh=args.force_refresh,
+            cache_dir=args.cache_dir,
+            output_dir=args.output_dir,
+            max_sources=args.max_sources,
+            max_matches=args.max_matches,
+            strict=args.strict,
+        )
+        print(f"Cache seed summary: {result['paths']['cache_seed_summary']}")
+        print(f"Run dir: {result['run_dir']}")
+        print(f"Fixture rows parsed: {len(result['fixtures'])}")
+        print(f"Rating rows parsed: {len(result['ratings'])}")
+        print(f"Stat rows parsed: {len(result['stats'])}")
+        print(f"Strict status: {result['strict_status']}")
+        if not result["fetch_results"].empty:
+            print("Source statuses:")
+            print(result["fetch_results"][["source_name", "source_type", "status", "row_count", "http_status", "error_message"]].to_string(index=False))
     elif args.command == "projection-results-checkpoint":
         result = run_projection_checkpoint(
             as_of_date=args.as_of_date,
@@ -1024,6 +1066,7 @@ def main(argv: list[str] | None = None) -> None:
             manual_matchups=args.manual_matchups,
             max_matches=args.max_matches,
             allow_network=args.allow_network,
+            cache_dir=args.cache_dir,
             allow_sample_data=args.allow_sample_data,
             output_dir=args.output_dir,
             build_viewer=args.build_viewer,

@@ -480,6 +480,7 @@ def run_projection_checkpoint(
     manual_matchups: str | Path | None = None,
     max_matches: int = 10,
     allow_network: bool = False,
+    cache_dir: str | Path = "data/source_cache/current_international",
     output_dir: str | Path = "outputs/projection_checkpoints",
     build_viewer: bool = False,
     allow_sample_data: bool = False,
@@ -499,6 +500,7 @@ def run_projection_checkpoint(
             allow_network=allow_network,
             allow_sample_data=allow_sample_data,
             max_matches=max_matches,
+            cache_dir=cache_dir,
         )
         source_path = Path(current_projection_result["projections_path"])
     elif source_path is None:
