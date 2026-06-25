@@ -68,3 +68,15 @@ Generated audit files are ignored.
 - `fail`: adapter error or unreadable local source.
 
 Local-only mode should not fail just because network data is unavailable.
+
+## SofaScore Current Probe
+
+Phase 23 upgrades SofaScore from a planned adapter shell to a conservative probe:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli probe-sofascore --as-of-date 2026-06-24 --no-network
+```
+
+The probe uses cache-first JSON reads from `data/source_cache/sofascore/`, optional polite `urllib` requests when `--allow-network` is set, and generated reports under `outputs/source_probes/sofascore/`.
+
+It may find fixtures, scores, match stats, xG/xGOT, lineups, and player ratings when those fields are present. Missing fields stay missing. The adapter does not use browser automation and does not bypass access controls.

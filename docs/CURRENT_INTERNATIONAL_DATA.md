@@ -1,12 +1,12 @@
 # Current International Data
 
-Phase 22 adds a current international data layer for World Cup-style workflows.
+Phase 22 adds a current international data layer for World Cup-style workflows. Phase 23 adds the first real current-source probe for SofaScore.
 
 The layer separates four things:
 
 - Fixture sources: OpenFootball, TheStatsAPI, SofaScore, ESPN scoreboard, or manual fallback.
 - Strength priors: EloRatings-style national-team ratings when a local cache is available.
-- Match stats/xG: planned adapter space only; no current xG is inferred from fixture-only data.
+- Match stats/xG: SofaScore can now be probed and cached; no current xG is inferred from fixture-only data.
 - Projection outputs: existing international projections wrapped with current-source support labels.
 
 ## Guardrails
@@ -22,9 +22,11 @@ The layer separates four things:
 
 ```bash
 python -m src.cli audit-current-international --as-of-date 2026-06-24 --no-network
+python -m src.cli probe-sofascore --as-of-date 2026-06-24 --no-network
 python -m src.cli build-current-international-slate --manual-matchups data/sample/current_international_matchups.csv --as-of-date 2026-06-24 --no-network
 python -m src.cli project-current-international --manual-matchups data/sample/current_international_matchups.csv --as-of-date 2026-06-24 --no-network --max-matches 10
 ```
 
 Generated outputs are written below `outputs/current_international/` and are ignored by git.
+SofaScore probe outputs are written below `outputs/source_probes/sofascore/` and are also ignored.
 

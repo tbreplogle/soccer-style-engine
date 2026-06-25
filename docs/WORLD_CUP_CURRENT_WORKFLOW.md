@@ -3,9 +3,10 @@
 Use this workflow when current World Cup fixtures are needed but a verified current event feed is unavailable.
 
 1. Audit available free sources with no network by default.
-2. Build a current international slate from local cache or manual fallback fixtures.
-3. Run projections through the existing international model.
-4. Read the support labels before using any output.
+2. Probe SofaScore in no-network mode first, then with `--allow-network` only when safe.
+3. Build a current international slate from local cache or manual fallback fixtures.
+4. Run projections through the existing international model.
+5. Read the support labels before using any output.
 
 ## Support Labels
 
@@ -19,4 +20,14 @@ Use this workflow when current World Cup fixtures are needed but a verified curr
 - `insufficient`: no usable current fixture or rating.
 
 The default manual sample demonstrates workflow mechanics only. It does not claim that sample matchups are official current World Cup fixtures.
+
+## Source Priority
+
+1. Cached/local SofaScore fixture data.
+2. Network SofaScore fixture data when `--allow-network` is set.
+3. OpenFootball/TheStatsAPI fixture backbone when local cache exists.
+4. ESPN scoreboard fallback.
+5. Manual fallback CSV.
+
+SofaScore fixture-only rows remain low support. SofaScore stats can raise support only when actual parsed statistic fields exist.
 

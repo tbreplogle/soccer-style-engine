@@ -20,6 +20,7 @@ from src.data_ingestion.multi_league_football_data import (
     normalize_multi_season_football_data,
 )
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
+from src.data_sources.adapters.sofascore_adapter import probe_sofascore
 from src.data_sources.source_audit import audit_free_sources
 from src.features.event_features import build_team_match_style_log
 from src.features.free_style_proxies import build_free_style_proxies
@@ -389,6 +390,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as-of-date")
     p.add_argument("--output-dir", default="outputs/source_audits")
     p.add_argument("--football-data-raw-dir", default="data/raw/football-data")
+
+    p = sub.add_parser("probe-sofascore")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--competition", default="")
+    p.add_argument("--match-id")
+    p.add_argument("--team", default="")
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--cache-dir", default="data/source_cache/sofascore")
+    p.add_argument("--output-dir", default="outputs/source_probes/sofascore")
+    p.add_argument("--max-matches", type=int, default=5)
 
     p = sub.add_parser("audit-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -835,6 +847,28 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Manifest: {result['manifest_path']}")
         print(f"Sources audited: {len(result['manifest']['sources_audited'])}")
         print(f"Status counts: {counts}")
+    elif args.command == "probe-sofascore":
+        result = probe_sofascore(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            match_id=args.match_id,
+            team=args.team,
+            allow_network=args.allow_network,
+            cache_dir=args.cache_dir,
+            output_dir=args.output_dir,
+            max_matches=args.max_matches,
+        )
+        manifest = result["manifest"]
+        print(f"SofaScore probe summary: {result['summary_path']}")
+        print(f"Fixture probe CSV: {result['fixture_path']}")
+        print(f"Match stats probe CSV: {result['match_stats_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Fixtures found: {manifest['fixture_count']}")
+        print(f"Match stats found: {manifest['match_stats_count']}")
+        print(f"xG found: {manifest['xg_found']}")
+        print(f"xGOT found: {manifest['xgot_found']}")
+        print(f"Lineups found: {manifest['lineups_found']}")
+        print(f"Player ratings found: {manifest['player_ratings_found']}")
     elif args.command == "audit-current-international":
         result = audit_current_international_sources(
             as_of_date=args.as_of_date,

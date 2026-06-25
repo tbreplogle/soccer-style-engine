@@ -84,6 +84,8 @@ class CurrentInternationalMatchStats(_DictMixin):
     shots_on_target_away: float | None = None
     xg_home: float | None = None
     xg_away: float | None = None
+    xgot_home: float | None = None
+    xgot_away: float | None = None
     corners_home: float | None = None
     corners_away: float | None = None
     fouls_home: float | None = None

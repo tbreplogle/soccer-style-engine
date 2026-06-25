@@ -149,14 +149,16 @@ def _rating_lookup(ratings: list[CurrentInternationalTeamRating]) -> dict[str, C
 def _fixture_to_slate_row(
     fixture: CurrentInternationalFixture,
     ratings: dict[str, CurrentInternationalTeamRating],
+    stats_lookup: dict[str, CurrentInternationalMatchStats] | None = None,
 ) -> CurrentInternationalSlateRow:
     rating = ratings.get(fixture.home_team) or ratings.get(fixture.away_team)
     rating_source = rating.source_name if rating else ""
-    mode = _fixture_mode(fixture)
+    stats = (stats_lookup or {}).get(fixture.source_match_id)
+    mode = stats.data_mode if stats else _fixture_mode(fixture)
     warnings = list(dict.fromkeys([
         *fixture.warnings,
-        "No current event/tracking data is attached.",
-        "No current xG/style claims are made from fixture-only inputs.",
+        *(stats.warnings if stats else ["No current event/tracking data is attached."]),
+        "SofaScore/basic stats are not true tracking data." if stats else "No current xG/style claims are made from fixture-only inputs.",
         "Proxy score adjustments remain disabled.",
     ]))
     return CurrentInternationalSlateRow(
@@ -170,10 +172,10 @@ def _fixture_to_slate_row(
         source_fixture_status=fixture.status,
         source_fixture_name=fixture.source_name,
         rating_source_name=rating_source,
-        stats_source_name="",
-        scoreboard_source_name="espn_scoreboard" if fixture.source_name == "espn_scoreboard" else "",
+        stats_source_name=stats.source_name if stats else "",
+        scoreboard_source_name=fixture.source_name if fixture.source_name in {"espn_scoreboard", "sofascore"} and (fixture.home_score is not None or fixture.away_score is not None) else "",
         data_mode=mode,
-        data_support_level=determine_data_support_level(fixture, rating),
+        data_support_level=determine_data_support_level(fixture, rating, stats),
         reliability_status=fixture.reliability_status,
         warnings=" | ".join(warnings),
     )
@@ -188,7 +190,13 @@ def _source_summary(results: list[SourceResult], manual_count: int) -> list[Curr
             status=result.status,
             current_fixture_coverage="available" if result.rows_returned and "fixture" in result.coverage_status else result.coverage_status,
             rating_coverage="available" if source == "eloratings" and result.rows_returned else ("planned" if source == "eloratings" else "not_rating_source"),
-            stats_xg_availability="not_available_current" if source in {"openfootball_worldcup", "thestatsapi_worldcup", "espn_scoreboard", "eloratings"} else "planned_unprobed",
+            stats_xg_availability=(
+                "available"
+                if source == "sofascore" and ("xg" in result.fields_available or "match_stats" in result.fields_available)
+                else "not_available_current"
+                if source in {"openfootball_worldcup", "thestatsapi_worldcup", "espn_scoreboard", "eloratings"}
+                else "planned_unprobed"
+            ),
             world_cup_readiness=result.coverage_status,
             reliability_status=result.reliability_status,
             warnings=result.warnings,
@@ -244,17 +252,21 @@ def audit_current_international_sources(
     allow_network: bool = False,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
+    sofascore_result, sofascore_fixtures, sofascore_stats = audit_sofascore_current_international(
+        allow_network=allow_network,
+        as_of_date=as_of_date,
+        competition=competition,
+    )
     openfootball_result, openfootball_fixtures = audit_openfootball_worldcup(allow_network=allow_network)
     thestatsapi_result, thestatsapi_fixtures = audit_thestatsapi_worldcup(allow_network=allow_network)
-    sofascore_result, sofascore_fixtures, sofascore_stats = audit_sofascore_current_international(allow_network=allow_network)
     eloratings_result, ratings = audit_eloratings_current(allow_network=allow_network)
     espn_result, espn_fixtures = audit_espn_scoreboard(allow_network=allow_network)
     fbref_result = audit_fbref_international(allow_network=allow_network)
     manual_fixtures = parse_manual_current_matchups(manual_matchups) if manual_matchups else []
-    fixtures = [*openfootball_fixtures, *thestatsapi_fixtures, *sofascore_fixtures, *espn_fixtures, *manual_fixtures]
+    fixtures = [*sofascore_fixtures, *openfootball_fixtures, *thestatsapi_fixtures, *espn_fixtures, *manual_fixtures]
     if competition:
         fixtures = [fixture for fixture in fixtures if not fixture.competition or competition.lower() in fixture.competition.lower()]
-    results = [openfootball_result, thestatsapi_result, sofascore_result, eloratings_result, espn_result, fbref_result]
+    results = [sofascore_result, openfootball_result, thestatsapi_result, eloratings_result, espn_result, fbref_result]
     summaries = _source_summary(results, len(manual_fixtures))
     run_dir = _run_dir(output_dir, as_of_date)
     summary_path = _write_source_summary(run_dir / "current_international_source_summary.md", results, summaries, allow_network)
@@ -266,6 +278,14 @@ def audit_current_international_sources(
         "fixture_count": len(fixtures),
         "rating_count": len(ratings),
         "stats_count": len(sofascore_stats),
+        "sofascore": {
+            "fixture_count": len(sofascore_fixtures),
+            "match_stats_count": len(sofascore_stats),
+            "xg_found": any(stat.xg_home is not None or stat.xg_away is not None for stat in sofascore_stats),
+            "xgot_found": any(stat.xgot_home is not None or stat.xgot_away is not None for stat in sofascore_stats),
+            "lineups_found": any(stat.lineups_available for stat in sofascore_stats),
+            "player_ratings_found": any(stat.player_ratings_available for stat in sofascore_stats),
+        },
         "source_status_counts": _result_frame(results)["status"].value_counts().to_dict(),
         "guardrails": {
             "current_statsbomb_used": False,
@@ -304,7 +324,8 @@ def build_current_international_slate(
         output_dir=output_dir,
     )
     ratings = _rating_lookup(audit["ratings"])
-    rows = [_fixture_to_slate_row(fixture, ratings).to_dict() for fixture in audit["fixtures"]]
+    stats_lookup = {stat.source_match_id: stat for stat in audit["stats"] if stat.source_match_id}
+    rows = [_fixture_to_slate_row(fixture, ratings, stats_lookup).to_dict() for fixture in audit["fixtures"]]
     frame = pd.DataFrame(rows)
     for column in SLATE_COLUMNS:
         if column not in frame.columns:
