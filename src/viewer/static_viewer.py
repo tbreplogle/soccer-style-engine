@@ -372,6 +372,9 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "projection_profile_comparison.md",
             run_dir / "projection_checkpoint_summary.md",
             run_dir / "poisson" / "poisson_summary.md",
+            run_dir / "current_international_source_summary.md",
+            run_dir / "current_international_projection_report.md",
+            run_dir / "source_audit" / "source_audit_summary.md",
         ] if path.exists()
     ]
     safety = scan_report_safety(markdown_paths)
@@ -412,6 +415,13 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Profile Comparison", "projection_profile_comparison.csv"),
         ("Projection Checkpoint Rows", "projection_checkpoint_rows.csv"),
         ("Projection Checkpoint Flags", "projection_checkpoint_flags.csv"),
+        ("Current International Slate", "current_international_slate.csv"),
+        ("Current International Projections", "current_international_projections.csv"),
+        ("Source Audit", "source_audit/source_audit.csv"),
+        ("Fixture Coverage", "source_audit/fixture_coverage.csv"),
+        ("Rating Coverage", "source_audit/rating_coverage.csv"),
+        ("Stat Coverage", "source_audit/stat_coverage.csv"),
+        ("Match Data Coverage", "source_audit/match_data_coverage.csv"),
         ("Poisson Match Summary", "poisson/poisson_match_summary.csv"),
         ("Poisson Correct Score Matrix", "poisson/poisson_correct_score_matrix.csv"),
     ]:

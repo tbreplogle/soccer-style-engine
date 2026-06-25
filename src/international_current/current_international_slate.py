@@ -8,12 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.data_sources.adapters.eloratings_adapter import audit_eloratings_current
-from src.data_sources.adapters.espn_scoreboard_adapter import audit_espn_scoreboard
-from src.data_sources.adapters.fbref_adapter import audit_fbref_international
-from src.data_sources.adapters.openfootball_worldcup_adapter import NO_REAL_FIXTURE_WARNING, audit_openfootball_worldcup
-from src.data_sources.adapters.sofascore_adapter import audit_sofascore_current_international
+from src.data_sources.adapters.openfootball_worldcup_adapter import NO_REAL_FIXTURE_WARNING
 from src.data_sources.source_result import SourceResult
+from src.international_current.data_coverage import write_coverage_report
 from src.international_current.current_international_schema import (
     CurrentInternationalFixture,
     CurrentInternationalMatchStats,
@@ -21,7 +18,11 @@ from src.international_current.current_international_schema import (
     CurrentInternationalSourceSummary,
     CurrentInternationalTeamRating,
 )
+from src.international_current.fixture_harvest import harvest_current_international_fixtures
+from src.international_current.rating_harvest import harvest_current_international_ratings
 from src.international_current.rating_projection import project_from_fixture_and_ratings
+from src.international_current.stat_harvest import harvest_current_international_stats
+from src.analysis.poisson_output import write_poisson_outputs
 from src.international_current.team_name_normalization import normalize_team_pair
 from src.models.international_projection import project_international_match
 
@@ -48,6 +49,9 @@ SLATE_COLUMNS = [
     "warnings",
     "style_inputs_available",
     "style_inputs_warning",
+    "data_coverage_score",
+    "missing_data_summary",
+    "source_audit_status",
 ]
 
 PROJECTION_COLUMNS = [
@@ -87,10 +91,20 @@ PROJECTION_COLUMNS = [
     "source_tier",
     "is_sample_data",
     "source_fixture_name",
+    "fixture_source",
     "rating_source_name",
+    "rating_source_home",
+    "rating_source_away",
     "stats_source_name",
+    "stat_source_home",
+    "stat_source_away",
     "scoreboard_source_name",
+    "fixture_source_status",
     "current_source_warnings",
+    "stat_status",
+    "data_coverage_score",
+    "missing_data_summary",
+    "source_audit_status",
     "phase22_guardrails",
     "style_inputs_available",
     "style_inputs_warning",
@@ -182,19 +196,41 @@ def determine_data_support_level(
         return "high_current_fixture_stats"
     if fixture and fixture.is_sample_data:
         return "sample_demo_only"
-    if fixture and rating:
-        if fixture.source_name == "espn_scoreboard":
-            return "medium_current_fixture_scoreboard_rating"
-        if fixture.source_name == "manual_current_fixture" or fixture.reliability_status == "manual_fallback":
-            return "low_manual_fixture_rating"
-        return "medium_current_fixture_rating"
     if fixture:
+        if rating:
+            if fixture.source_name == "espn_scoreboard":
+                return "medium_current_fixture_scoreboard_rating"
+            if fixture.source_name == "manual_current_fixture" or fixture.reliability_status == "manual_fallback":
+                return "low_manual_fixture_rating"
+            return "medium_current_fixture_rating"
         if fixture.source_name == "manual_current_fixture" or fixture.reliability_status == "manual_fallback":
             return "low_manual_fixture_rating"
         return "low_fixture_only"
     if rating:
         return "historical_context_only"
     return "insufficient"
+
+
+def _fixture_support_label(
+    fixture: CurrentInternationalFixture,
+    home_rating: CurrentInternationalTeamRating | None,
+    away_rating: CurrentInternationalTeamRating | None,
+    stats: CurrentInternationalMatchStats | None,
+) -> str:
+    if fixture.is_sample_data:
+        return "sample_demo_only"
+    prefix = "manual_fixture" if fixture.source_tier == "manual" or fixture.reliability_status == "manual_fallback" else "real_fixture"
+    if stats and (stats.xg_home is not None or stats.xg_away is not None):
+        return f"{prefix}_xg_stats"
+    if stats:
+        return f"{prefix}_basic_stats"
+    home_ok = bool(home_rating and home_rating.rating_value is not None)
+    away_ok = bool(away_rating and away_rating.rating_value is not None)
+    if home_ok and away_ok:
+        return f"{prefix}_full_rating"
+    if home_ok or away_ok:
+        return f"{prefix}_partial_rating"
+    return f"{prefix}_missing_rating"
 
 
 def _fixture_mode(fixture: CurrentInternationalFixture) -> str:
@@ -267,6 +303,9 @@ def _fixture_to_slate_row(
         warnings=" | ".join(warnings),
         style_inputs_available=False,
         style_inputs_warning="No current event/xG/tracking/style-aware matchup inputs are available for this slate row.",
+        data_coverage_score=0,
+        missing_data_summary="",
+        source_audit_status="",
     )
 
 
@@ -341,36 +380,50 @@ def audit_current_international_sources(
     allow_network: bool = False,
     allow_sample_data: bool = False,
     output_dir: str | Path = "outputs/current_international",
+    cache_dir: str | Path = "data/source_cache/current_international",
+    refresh_fixtures: bool = False,
+    refresh_ratings: bool = False,
+    refresh_stats: bool = False,
 ) -> dict[str, Any]:
-    openfootball_result, openfootball_fixtures = audit_openfootball_worldcup(
-        allow_network=allow_network,
-        use_sample_fallback=allow_sample_data,
-    )
-    # Phase 24 does not depend on SofaScore after the safe probe returned HTTP 403.
-    # Use cache/local mode only here; do not force live SofaScore access in the default workflow.
-    sofascore_result, sofascore_fixtures, sofascore_stats = audit_sofascore_current_international(
-        allow_network=False,
-        as_of_date=as_of_date,
+    fixture_harvest = harvest_current_international_fixtures(
+        as_of_date=as_of_date or date.today().isoformat(),
         competition=competition,
+        allow_network=allow_network or refresh_fixtures,
+        cache_dir=cache_dir,
+        allow_sample_data=allow_sample_data,
     )
-    if allow_network:
-        sofascore_result.warnings.append("SofaScore live probing is intentionally not forced in the Phase 24 default backbone after safe requests returned HTTP 403.")
-    eloratings_result, ratings = audit_eloratings_current(
-        allow_network=allow_network,
-        use_sample_fallback=allow_sample_data or bool(manual_matchups),
-    )
-    espn_result, espn_fixtures = audit_espn_scoreboard(allow_network=allow_network)
-    fbref_result = audit_fbref_international(allow_network=allow_network)
     manual_fixtures = parse_manual_current_matchups(manual_matchups) if manual_matchups else []
-    fixtures = [*openfootball_fixtures, *sofascore_fixtures, *espn_fixtures, *manual_fixtures]
+    fixtures = [*fixture_harvest["fixtures"], *manual_fixtures]
     if competition:
         fixtures = [fixture for fixture in fixtures if not fixture.competition or competition.lower() in fixture.competition.lower()]
-    results = [openfootball_result, eloratings_result, sofascore_result, espn_result, fbref_result]
-    summaries = _source_summary(results, len(manual_fixtures))
-    rating_names = {rating.team for rating in ratings if rating.team and rating.rating_value is not None}
+
     fixture_teams = sorted({team for fixture in fixtures for team in [fixture.home_team, fixture.away_team] if team})
+    rating_harvest = harvest_current_international_ratings(
+        fixture_teams=fixture_teams,
+        allow_network=allow_network or refresh_ratings,
+        cache_dir=cache_dir,
+        allow_sample_data=allow_sample_data or bool(manual_matchups),
+    )
+    stat_harvest = harvest_current_international_stats(
+        fixture_teams=fixture_teams,
+        allow_network=allow_network or refresh_stats,
+        cache_dir=cache_dir,
+    )
+    ratings = rating_harvest["ratings"]
+    source_audit = pd.concat(
+        [
+            fixture_harvest["audit_frame"],
+            rating_harvest["audit_frame"],
+            stat_harvest["audit_frame"],
+        ],
+        ignore_index=True,
+    )
+    rating_names = {rating.team for rating in ratings if rating.team and rating.rating_value is not None}
     missing_ratings = [team for team in fixture_teams if team not in rating_names]
-    if openfootball_fixtures and ratings and not missing_ratings:
+    real_fixture_count = len([fixture for fixture in fixtures if not fixture.is_sample_data and fixture.source_tier != "manual"])
+    manual_fixture_count = len([fixture for fixture in fixtures if fixture.source_tier == "manual" or fixture.reliability_status == "manual_fallback"])
+    sample_fixture_count = len([fixture for fixture in fixtures if fixture.is_sample_data or fixture.source_tier == "sample"])
+    if real_fixture_count and ratings and not missing_ratings:
         readiness = "ready_fixture_and_rating"
     elif fixtures and fixtures == manual_fixtures:
         readiness = "manual_only"
@@ -379,7 +432,38 @@ def audit_current_international_sources(
     else:
         readiness = "insufficient"
     run_dir = _run_dir(output_dir, as_of_date)
-    summary_path = _write_source_summary(run_dir / "current_international_source_summary.md", results, summaries, allow_network)
+    fixtures_frame = fixture_harvest["fixtures_frame"]
+    if manual_fixtures:
+        manual_frame = pd.DataFrame([{
+            "match_date": fixture.match_date,
+            "kickoff_time": fixture.kickoff_time,
+            "competition": fixture.competition,
+            "round_name": fixture.round_name,
+            "group_name": fixture.group_name,
+            "home_team": fixture.home_team,
+            "away_team": fixture.away_team,
+            "neutral_site": fixture.neutral_site,
+            "venue": fixture.venue,
+            "source_name": fixture.source_name,
+            "source_url": fixture.source_url,
+            "source_tier": "manual",
+            "source_status": fixture.status,
+            "is_sample_data": False,
+            "reliability_status": fixture.reliability_status,
+            "fixture_confidence": "manual",
+            "warnings": " | ".join(fixture.warnings),
+        } for fixture in manual_fixtures])
+            # Ensure manual rows match the fixture harvest frame shape.
+        fixtures_frame = pd.concat([fixtures_frame, manual_frame[fixtures_frame.columns]], ignore_index=True) if not fixtures_frame.empty else manual_frame
+    coverage_dir = run_dir / "source_audit"
+    coverage = write_coverage_report(
+        output_dir=coverage_dir,
+        source_audit=source_audit,
+        fixtures=fixtures_frame,
+        ratings=rating_harvest["ratings_frame"],
+        stats=stat_harvest["stats_frame"],
+    )
+    summary_path = Path(coverage["paths"]["source_audit_summary"])
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "as_of_date": as_of_date or date.today().isoformat(),
@@ -387,25 +471,18 @@ def audit_current_international_sources(
         "allow_network": allow_network,
         "allow_sample_data": allow_sample_data,
         "fixture_count": len(fixtures),
-        "real_fixture_count": len([fixture for fixture in fixtures if not fixture.is_sample_data and fixture.source_tier != "manual"]),
-        "manual_fixture_count": len([fixture for fixture in fixtures if fixture.source_tier == "manual" or fixture.reliability_status == "manual_fallback"]),
-        "sample_fixture_count": len([fixture for fixture in fixtures if fixture.is_sample_data or fixture.source_tier == "sample"]),
+        "real_fixture_count": real_fixture_count,
+        "manual_fixture_count": manual_fixture_count,
+        "sample_fixture_count": sample_fixture_count,
         "rating_count": len(ratings),
         "teams_missing_ratings": missing_ratings,
         "teams_missing_ratings_count": len(missing_ratings),
         "world_cup_readiness_status": readiness,
         "style_inputs_available": False,
         "style_inputs_warning": "No current event/xG/tracking/style-aware matchup inputs are available; do not report style-aware projection ready.",
-        "stats_count": len(sofascore_stats),
-        "sofascore": {
-            "fixture_count": len(sofascore_fixtures),
-            "match_stats_count": len(sofascore_stats),
-            "xg_found": any(stat.xg_home is not None or stat.xg_away is not None for stat in sofascore_stats),
-            "xgot_found": any(stat.xgot_home is not None or stat.xgot_away is not None for stat in sofascore_stats),
-            "lineups_found": any(stat.lineups_available for stat in sofascore_stats),
-            "player_ratings_found": any(stat.player_ratings_available for stat in sofascore_stats),
-        },
-        "source_status_counts": _result_frame(results)["status"].value_counts().to_dict(),
+        "stats_count": len(stat_harvest["stats_frame"]),
+        "stat_xg_team_count": int(stat_harvest["stats_frame"].get("xg_for_per_match", pd.Series(dtype=object)).notna().sum()) if not stat_harvest["stats_frame"].empty else 0,
+        "source_status_counts": source_audit[["success", "skipped", "blocked"]].sum(numeric_only=True).to_dict() if not source_audit.empty else {},
         "guardrails": {
             "current_statsbomb_used": False,
             "the_stats_api_used": False,
@@ -413,18 +490,24 @@ def audit_current_international_sources(
             "proxy_adjustments_enabled": False,
             "betting_recommendations": False,
         },
-        "output_paths": {"source_summary": str(summary_path)},
+        "output_paths": {"source_summary": str(summary_path), **coverage["paths"]},
         "warnings": [] if fixtures else [NO_REAL_FIXTURE_WARNING],
     }
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
     return {
         "run_dir": run_dir,
-        "results": results,
-        "source_summaries": summaries,
+        "results": [],
+        "source_summaries": [],
+        "source_audit": source_audit,
+        "fixtures_frame": fixtures_frame,
+        "ratings_frame": rating_harvest["ratings_frame"],
+        "stats_frame": stat_harvest["stats_frame"],
+        "match_coverage": coverage["match_coverage"],
         "fixtures": fixtures,
         "ratings": ratings,
-        "stats": sofascore_stats,
+        "stats": [],
         "source_summary_path": summary_path,
+        "source_audit_dir": coverage_dir,
         "manifest_path": manifest_path,
         "manifest": manifest,
     }
@@ -437,6 +520,10 @@ def build_current_international_slate(
     allow_network: bool = False,
     allow_sample_data: bool = False,
     output_dir: str | Path = "outputs/current_international",
+    cache_dir: str | Path = "data/source_cache/current_international",
+    refresh_fixtures: bool = False,
+    refresh_ratings: bool = False,
+    refresh_stats: bool = False,
 ) -> dict[str, Any]:
     audit = audit_current_international_sources(
         as_of_date=as_of_date,
@@ -445,6 +532,10 @@ def build_current_international_slate(
         allow_network=allow_network,
         allow_sample_data=allow_sample_data,
         output_dir=output_dir,
+        cache_dir=cache_dir,
+        refresh_fixtures=refresh_fixtures,
+        refresh_ratings=refresh_ratings,
+        refresh_stats=refresh_stats,
     )
     ratings = _rating_lookup(audit["ratings"])
     stats_lookup = {stat.source_match_id: stat for stat in audit["stats"] if stat.source_match_id}
@@ -454,6 +545,26 @@ def build_current_international_slate(
         if column not in frame.columns:
             frame[column] = pd.NA
     frame = frame[SLATE_COLUMNS]
+    coverage = audit.get("match_coverage", pd.DataFrame())
+    if not frame.empty and not coverage.empty:
+        coverage_lookup = {
+            (str(row.get("match_date", "")), str(row.get("home_team", "")), str(row.get("away_team", ""))): row
+            for _, row in coverage.iterrows()
+        }
+        scores = []
+        missing = []
+        for _, row in frame.iterrows():
+            item = coverage_lookup.get((str(row.get("match_date", "")), str(row.get("home_team", "")), str(row.get("away_team", ""))))
+            if item is None:
+                scores.append(0)
+                missing.append("coverage_row_missing")
+                continue
+            score = sum(1 for key in ["fixture_found", "home_rating_found", "away_rating_found", "home_current_stats_found", "away_current_stats_found", "xg_available", "shots_available"] if bool(item.get(key)))
+            scores.append(round(score / 7, 3))
+            missing.append(item.get("missing_items", ""))
+        frame["data_coverage_score"] = scores
+        frame["missing_data_summary"] = missing
+        frame["source_audit_status"] = audit["manifest"]["world_cup_readiness_status"]
     run_dir = audit["run_dir"]
     slate_path = run_dir / "current_international_slate.csv"
     slate_path.parent.mkdir(parents=True, exist_ok=True)
@@ -526,6 +637,13 @@ def project_current_international(
     allow_sample_data: bool = False,
     max_matches: int = 10,
     output_dir: str | Path = "outputs/current_international",
+    cache_dir: str | Path = "data/source_cache/current_international",
+    refresh_fixtures: bool = False,
+    refresh_ratings: bool = False,
+    refresh_stats: bool = False,
+    source_audit: bool = False,
+    strict_real_data: bool = False,
+    build_poisson_board: bool = False,
 ) -> dict[str, Any]:
     slate_result = build_current_international_slate(
         as_of_date=as_of_date,
@@ -534,6 +652,10 @@ def project_current_international(
         allow_network=allow_network,
         allow_sample_data=allow_sample_data,
         output_dir=output_dir,
+        cache_dir=cache_dir,
+        refresh_fixtures=refresh_fixtures,
+        refresh_ratings=refresh_ratings,
+        refresh_stats=refresh_stats,
     )
     slate = slate_result["slate"].head(max_matches).copy()
     ratings = _rating_lookup(slate_result["ratings"])
@@ -565,6 +687,9 @@ def project_current_international(
         )
         home_rating, away_rating = _rating_for_fixture(fixture, ratings)
         baseline = project_from_fixture_and_ratings(fixture, home_rating, away_rating)
+        support_label = str(matchup["data_support_level"])
+        if strict_real_data or source_audit:
+            support_label = _fixture_support_label(fixture, home_rating, away_rating, None)
         row = {
             "as_of_date": as_of_date,
             "team_a": baseline["home_team"],
@@ -593,21 +718,34 @@ def project_current_international(
             "rating_status": baseline["rating_status"],
             "rating_warning": baseline["rating_warning"],
         }
+        home_rating_source = home_rating.source_name if home_rating else ""
+        away_rating_source = away_rating.source_name if away_rating else ""
+        stat_source = str(matchup.get("stats_source_name", ""))
         row.update({
             "match_date": matchup["match_date"],
             "competition": matchup["competition"],
             "round_name": matchup["round_name"],
             "group_name": matchup["group_name"],
             "current_fixture_data_mode": matchup["data_mode"],
-            "data_support_level": matchup["data_support_level"],
+            "data_support_level": support_label,
             "reliability_status": matchup["reliability_status"],
             "source_tier": matchup.get("source_tier", ""),
             "is_sample_data": matchup.get("is_sample_data", False),
             "source_fixture_name": matchup["source_fixture_name"],
+            "fixture_source": matchup["source_fixture_name"],
             "rating_source_name": matchup["rating_source_name"],
+            "rating_source_home": home_rating_source,
+            "rating_source_away": away_rating_source,
             "stats_source_name": matchup["stats_source_name"],
+            "stat_source_home": stat_source,
+            "stat_source_away": stat_source,
             "scoreboard_source_name": matchup["scoreboard_source_name"],
+            "fixture_source_status": matchup["source_fixture_status"],
             "current_source_warnings": matchup["warnings"],
+            "stat_status": "basic_stats_available" if stat_source else "stats_missing",
+            "data_coverage_score": matchup.get("data_coverage_score", 0),
+            "missing_data_summary": matchup.get("missing_data_summary", ""),
+            "source_audit_status": matchup.get("source_audit_status", slate_result["manifest"]["world_cup_readiness_status"]),
             "phase22_guardrails": "current_statsbomb_used=false | proxy_adjustments_enabled=false | no_betting_recommendations=true",
             "style_inputs_available": matchup.get("style_inputs_available", False),
             "style_inputs_warning": matchup.get("style_inputs_warning", "No current style-aware matchup inputs are available."),
@@ -628,13 +766,31 @@ def project_current_international(
     run_dir = slate_result["run_dir"]
     projection_path = run_dir / "current_international_projections.csv"
     projections.to_csv(projection_path, index=False)
+    poisson_paths: dict[str, Any] = {}
+    if build_poisson_board and not projections.empty:
+        poisson_rows = projections.rename(columns={"team_a_xg_final": "projected_home_xg", "team_b_xg_final": "projected_away_xg"})
+        poisson_paths = write_poisson_outputs(poisson_rows, run_dir / "poisson")
     report_path = _write_projection_report(run_dir / "current_international_projection_report.md", projections, slate_result["slate"])
     manifest = dict(slate_result["manifest"])
     manifest["projection_rows"] = len(projections)
+    fallback_neutral_rows = int(((projections.get("rating_status", pd.Series(dtype=str)) == "both_ratings_missing") & (projections.get("team_a_xg_final", pd.Series(dtype=float)) == projections.get("team_b_xg_final", pd.Series(dtype=float)))).sum()) if not projections.empty else 0
+    strict_messages = []
+    if strict_real_data:
+        if manifest["real_fixture_count"] == 0:
+            strict_messages.append("strict_real_data: no real fixture source available.")
+        if manifest["teams_missing_ratings_count"]:
+            strict_messages.append("strict_real_data: ratings missing for one or more teams.")
+        if fallback_neutral_rows:
+            strict_messages.append("strict_real_data: fallback-neutral rows remain.")
+    manifest["strict_real_data"] = strict_real_data
+    manifest["strict_real_data_status"] = "fail" if strict_messages else "pass"
+    manifest["strict_real_data_warnings"] = strict_messages
+    manifest["fallback_neutral_rows"] = fallback_neutral_rows
     manifest["output_paths"] = {
         **manifest["output_paths"],
         "projection_report": str(report_path),
         "projections": str(projection_path),
+        "poisson": poisson_paths,
     }
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
     return {
@@ -642,6 +798,7 @@ def project_current_international(
         "projections": projections,
         "projections_path": projection_path,
         "projection_report_path": report_path,
+        "poisson_paths": poisson_paths,
         "manifest_path": manifest_path,
         "manifest": manifest,
     }

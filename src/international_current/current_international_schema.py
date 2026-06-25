@@ -26,6 +26,16 @@ DATA_SUPPORT_LEVELS = {
     "historical_context_only",
     "insufficient",
     "sample_demo_only",
+    "real_fixture_full_rating",
+    "real_fixture_partial_rating",
+    "real_fixture_missing_rating",
+    "real_fixture_basic_stats",
+    "real_fixture_xg_stats",
+    "manual_fixture_full_rating",
+    "manual_fixture_partial_rating",
+    "manual_fixture_missing_rating",
+    "manual_fixture_basic_stats",
+    "manual_fixture_xg_stats",
 }
 
 
@@ -133,6 +143,9 @@ class CurrentInternationalSlateRow(_DictMixin):
     warnings: str = ""
     style_inputs_available: bool = False
     style_inputs_warning: str = ""
+    data_coverage_score: float = 0.0
+    missing_data_summary: str = ""
+    source_audit_status: str = ""
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:

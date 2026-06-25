@@ -31,6 +31,20 @@ CHECKPOINT_OUTPUT_NAMES = (
     "poisson/poisson_correct_score_matrix.csv",
 )
 
+CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
+    "current_international_manifest.json",
+    "current_international_source_summary.md",
+    "current_international_slate.csv",
+    "current_international_projections.csv",
+    "current_international_projection_report.md",
+    "source_audit/source_audit.csv",
+    "source_audit/fixture_coverage.csv",
+    "source_audit/rating_coverage.csv",
+    "source_audit/stat_coverage.csv",
+    "source_audit/match_data_coverage.csv",
+    "source_audit/source_audit_summary.md",
+)
+
 
 def _empty_entry(run_dir: Path, error: str = "") -> dict[str, Any]:
     present = sorted(path.name for path in run_dir.iterdir()) if run_dir.exists() and run_dir.is_dir() else []
@@ -139,6 +153,43 @@ def _poisson_match_count(checkpoint_dir: Path) -> int:
         return 0
 
 
+def _current_international_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(run_dir, "malformed_current_international_manifest")
+        entry["entry_type"] = "current_international_run"
+        entry["status"] = "malformed_current_international_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+
+    present = [name for name in CURRENT_INTERNATIONAL_OUTPUT_NAMES if (run_dir / name).exists()]
+    return {
+        "entry_type": "current_international_run",
+        "run_date": str(manifest.get("as_of_date") or run_dir.name),
+        "run_id": str(manifest.get("run_id") or f"current_international_{run_dir.name}"),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("strict_real_data_status") or manifest.get("world_cup_readiness_status") or "unknown"),
+        "currentness_status": str(manifest.get("world_cup_readiness_status") or "current_international"),
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": int(manifest.get("projection_rows") or manifest.get("slate_rows") or manifest.get("fixture_count") or 0),
+        "real_rows_reviewed": int(manifest.get("real_fixture_count") or 0),
+        "manual_rows_reviewed": int(manifest.get("manual_fixture_count") or 0),
+        "sample_rows_reviewed": int(manifest.get("sample_fixture_count") or 0),
+        "poisson_match_count": int(_poisson_match_count(run_dir)),
+        "slate_type": "current_international_run",
+        "warnings_count": len(manifest.get("warnings") or []) + len(manifest.get("strict_real_data_warnings") or []),
+        "warnings": list(manifest.get("warnings") or []) + list(manifest.get("strict_real_data_warnings") or []),
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(run_dir / "source_audit" / "source_audit_summary.md") if (run_dir / "source_audit" / "source_audit_summary.md").exists() else "",
+        "run_dir": str(run_dir),
+        "error": "",
+    }
+
+
 def _iter_run_entries(root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
@@ -164,6 +215,17 @@ def _iter_checkpoint_entries(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _iter_current_international_entries(root: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if not root.exists() or not root.is_dir():
+        return entries
+    for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
+        manifest_path = run_dir / "current_international_manifest.json"
+        if manifest_path.exists():
+            entries.append(_current_international_entry(run_dir, manifest_path))
+    return entries
+
+
 def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, Any]]:
     root = Path(runs_root)
     if not root.exists() or not root.is_dir():
@@ -172,7 +234,10 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
     run_roots = [root]
     if (root / "runs").exists() and root.name != "runs":
         run_roots = [root / "runs"]
-    elif (root / "projection_checkpoints").exists() and root.name != "runs":
+    elif (
+        (root / "projection_checkpoints").exists()
+        or (root / "current_international").exists()
+    ) and root.name != "runs":
         run_roots = []
     for run_root in run_roots:
         if run_root.exists() and run_root.is_dir():
@@ -180,6 +245,8 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
 
     checkpoint_root = root if root.name == "projection_checkpoints" else root / "projection_checkpoints"
     entries.extend(_iter_checkpoint_entries(checkpoint_root))
+    current_international_root = root if root.name == "current_international" else root / "current_international"
+    entries.extend(_iter_current_international_entries(current_international_root))
     return sorted(entries, key=lambda item: (item.get("run_date", ""), item.get("generated_at", "")), reverse=True)
 
 

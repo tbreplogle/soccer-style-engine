@@ -30,5 +30,7 @@ python -m src.cli project-current-international --manual-matchups data/sample/cu
 ```
 
 Generated outputs are written below `outputs/current_international/` and are ignored by git.
+
+Phase 27 adds the source harvest/audit layer documented in `docs/CURRENT_INTERNATIONAL_SOURCE_HARVEST.md`. Use `audit-current-international-sources` to inspect fixture, rating, stat, and match coverage before running strict current projections.
 SofaScore probe outputs are written below `outputs/source_probes/sofascore/` and are also ignored.
 

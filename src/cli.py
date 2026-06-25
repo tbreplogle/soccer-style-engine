@@ -422,6 +422,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manual-matchups")
     p.add_argument("--output-dir", default="outputs/current_international")
     p.add_argument("--allow-sample-data", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--refresh-fixtures", action="store_true")
+    p.add_argument("--refresh-ratings", action="store_true")
+    p.add_argument("--refresh-stats", action="store_true")
+
+    p = sub.add_parser("audit-current-international-sources")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--manual-matchups")
+    p.add_argument("--output-dir", default="outputs/current_international")
+    p.add_argument("--allow-sample-data", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--refresh-fixtures", action="store_true")
+    p.add_argument("--refresh-ratings", action="store_true")
+    p.add_argument("--refresh-stats", action="store_true")
 
     p = sub.add_parser("build-current-international-slate")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -431,6 +448,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manual-matchups")
     p.add_argument("--output-dir", default="outputs/current_international")
     p.add_argument("--allow-sample-data", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--refresh-fixtures", action="store_true")
+    p.add_argument("--refresh-ratings", action="store_true")
+    p.add_argument("--refresh-stats", action="store_true")
 
     p = sub.add_parser("project-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -441,6 +462,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-matches", type=int, default=10)
     p.add_argument("--output-dir", default="outputs/current_international")
     p.add_argument("--allow-sample-data", action="store_true")
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--source-audit", action="store_true")
+    p.add_argument("--refresh-fixtures", action="store_true")
+    p.add_argument("--refresh-ratings", action="store_true")
+    p.add_argument("--refresh-stats", action="store_true")
+    p.add_argument("--strict-real-data", action="store_true")
+    p.add_argument("--build-poisson-board", action="store_true")
 
     p = sub.add_parser("projection-results-checkpoint")
     p.add_argument("--as-of-date", default=date.today().isoformat())
@@ -917,7 +945,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Ratings found: {manifest['rating_count']}")
         print(f"Teams missing ratings: {manifest['teams_missing_ratings_count']}")
         print(f"Readiness: {manifest['readiness_status']}")
-    elif args.command == "audit-current-international":
+    elif args.command in {"audit-current-international", "audit-current-international-sources"}:
         result = audit_current_international_sources(
             as_of_date=args.as_of_date,
             competition=args.competition,
@@ -925,12 +953,22 @@ def main(argv: list[str] | None = None) -> None:
             allow_network=args.allow_network,
             allow_sample_data=args.allow_sample_data,
             output_dir=args.output_dir,
+            cache_dir=args.cache_dir,
+            refresh_fixtures=args.refresh_fixtures,
+            refresh_ratings=args.refresh_ratings,
+            refresh_stats=args.refresh_stats,
         )
         counts = result["manifest"]["source_status_counts"]
-        print(f"Current international source summary: {result['source_summary_path']}")
+        print(f"Current international source audit summary: {result['source_summary_path']}")
+        print(f"Source audit dir: {result['source_audit_dir']}")
         print(f"Manifest: {result['manifest_path']}")
         print(f"Fixtures found: {len(result['fixtures'])}")
+        print(f"Real fixture rows: {result['manifest']['real_fixture_count']}")
+        print(f"Manual fixture rows: {result['manifest']['manual_fixture_count']}")
+        print(f"Sample fixture rows: {result['manifest']['sample_fixture_count']}")
         print(f"Ratings found: {len(result['ratings'])}")
+        print(f"Teams missing ratings: {result['manifest']['teams_missing_ratings_count']}")
+        print(f"Stats rows: {result['manifest']['stats_count']}")
         print(f"Status counts: {counts}")
     elif args.command == "build-current-international-slate":
         result = build_current_international_slate(
@@ -940,6 +978,10 @@ def main(argv: list[str] | None = None) -> None:
             allow_network=args.allow_network,
             allow_sample_data=args.allow_sample_data,
             output_dir=args.output_dir,
+            cache_dir=args.cache_dir,
+            refresh_fixtures=args.refresh_fixtures,
+            refresh_ratings=args.refresh_ratings,
+            refresh_stats=args.refresh_stats,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -954,6 +996,13 @@ def main(argv: list[str] | None = None) -> None:
             allow_sample_data=args.allow_sample_data,
             max_matches=args.max_matches,
             output_dir=args.output_dir,
+            cache_dir=args.cache_dir,
+            refresh_fixtures=args.refresh_fixtures,
+            refresh_ratings=args.refresh_ratings,
+            refresh_stats=args.refresh_stats,
+            source_audit=args.source_audit,
+            strict_real_data=args.strict_real_data,
+            build_poisson_board=args.build_poisson_board,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -961,8 +1010,11 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Current international projection report: {result['projection_report_path']}")
         print(f"Manifest: {result['manifest_path']}")
         print(f"Projection rows: {len(result['projections'])}")
+        print(f"Strict real-data status: {result['manifest']['strict_real_data_status']}")
+        for warning in result["manifest"].get("strict_real_data_warnings", []):
+            print(f"Warning: {warning}")
         if not result["projections"].empty:
-            columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level"]
+            columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level", "rating_status", "data_coverage_score"]
             print(result["projections"][columns].to_string(index=False))
     elif args.command == "projection-results-checkpoint":
         result = run_projection_checkpoint(
