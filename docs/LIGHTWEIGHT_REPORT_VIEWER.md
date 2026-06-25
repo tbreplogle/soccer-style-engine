@@ -13,6 +13,7 @@ It writes static HTML to:
 ```text
 outputs/viewer/index.html
 outputs/viewer/runs/<run_id>.html
+outputs/viewer/projection_checkpoints/YYYY-MM-DD/index.html
 ```
 
 Generated viewer files are ignored by git.
@@ -24,6 +25,7 @@ Generated viewer files are ignored by git.
 - Shows currentness, season sanity, warnings, row counts, and slate type.
 - Renders club slate, international slate, and profile comparison CSV files when present.
 - Renders generated report markdown with a lightweight safe formatter.
+- Renders projection checkpoint Poisson outputs as readable probability board pages when those generated files exist.
 - Runs a warning-only safety scan for action-language terms in generated reports.
 
 ## What It Does Not Do

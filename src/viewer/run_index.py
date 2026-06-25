@@ -23,6 +23,10 @@ CHECKPOINT_OUTPUT_NAMES = (
     "projection_checkpoint_rows.csv",
     "projection_checkpoint_flags.csv",
     "poisson/poisson_summary.md",
+    "poisson/poisson_1x2.csv",
+    "poisson/poisson_totals.csv",
+    "poisson/poisson_btts.csv",
+    "poisson/poisson_clean_sheets.csv",
     "poisson/poisson_match_summary.csv",
     "poisson/poisson_correct_score_matrix.csv",
 )
@@ -109,6 +113,10 @@ def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, An
         "season_sanity_status": "not_applicable",
         "leagues": [],
         "row_count": int(manifest.get("rows_reviewed") or 0),
+        "real_rows_reviewed": int(manifest.get("real_rows_reviewed") or 0),
+        "manual_rows_reviewed": int(manifest.get("manual_rows_reviewed") or 0),
+        "sample_rows_reviewed": int(manifest.get("sample_rows_reviewed") or 0),
+        "poisson_match_count": int(_poisson_match_count(checkpoint_dir)),
         "slate_type": "projection_checkpoint",
         "warnings_count": warnings_count,
         "warnings": [f"{warnings_count} projection checkpoint warning flags"] if warnings_count else [],
@@ -119,6 +127,16 @@ def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, An
         "error": "",
         "source_projection_file": str(manifest.get("source_projection_file") or ""),
     }
+
+
+def _poisson_match_count(checkpoint_dir: Path) -> int:
+    path = checkpoint_dir / "poisson" / "poisson_match_summary.csv"
+    if not path.exists():
+        return 0
+    try:
+        return max(0, sum(1 for _ in path.open("r", encoding="utf-8-sig")) - 1)
+    except OSError:
+        return 0
 
 
 def _iter_run_entries(root: Path) -> list[dict[str, Any]]:

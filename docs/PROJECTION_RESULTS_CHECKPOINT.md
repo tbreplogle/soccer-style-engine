@@ -46,6 +46,12 @@ Build the static viewer after the checkpoint:
 .\.venv\Scripts\python.exe -m src.cli projection-results-checkpoint --as-of-date 2026-06-24 --run-current-international --no-network --build-viewer
 ```
 
+Build the readable Poisson board page in the static viewer:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli projection-results-checkpoint --as-of-date 2026-06-24 --run-current-international --no-network --allow-sample-data --build-viewer --build-poisson-board
+```
+
 ## Outputs
 
 Generated files are written under:
@@ -69,6 +75,14 @@ Each checkpoint writes:
 - `poisson/poisson_summary.md`
 
 These are generated outputs and should not be committed.
+
+When the static viewer is built from `outputs`, checkpoint runs with Poisson output also get a readable board page:
+
+```text
+outputs/viewer/projection_checkpoints/YYYY-MM-DD/index.html
+```
+
+The main viewer index links to this page and shows real/manual/sample row counts, warning count, and matches with Poisson output.
 
 ## Checks
 
@@ -101,6 +115,8 @@ Poisson uses projected home xG and away xG as lambda values and writes:
 These are probability outputs, not betting recommendations.
 
 Score labels in generated CSVs use an Excel-safe format such as `1 - 0`, not `1-0`, so spreadsheet software does not turn scores into dates.
+
+See `docs/POISSON_BOARD_VIEWER.md` for the Phase 26 static viewer page that renders these generated files as match cards, probability tables, totals, BTTS, clean sheet sections, and a correct-score grid.
 
 ## Sample And Manual Rows
 

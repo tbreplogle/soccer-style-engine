@@ -47,3 +47,11 @@ The checkpoint makes the baseline explicit: current World Cup/international outp
 The intended output path is style-aware projected xG into a Poisson probability board. Future style-aware matchup logic should improve the projected home xG and away xG inputs; Poisson then turns those xG values into 1X2, totals, BTTS, clean sheet, and correct-score probabilities.
 
 Sample fixtures are demo-only and must be explicitly enabled. Manual fixtures are user supplied and should stay labeled as such.
+
+## Phase 26 Viewer Polish
+
+Phase 26 does not add style-aware xG adjustment. It makes the existing checkpoint Poisson outputs easier to inspect in the static viewer.
+
+The board page reads generated checkpoint CSV/Markdown files and shows projected team xG, probability output, model-implied American odds, totals, BTTS, clean sheets, correct scores, and source/support warnings. It keeps style inputs marked unavailable when the row is rating-only or fixture-only.
+
+This prepares the review surface for future style-aware xG work: first make projected xG and probability outputs understandable, then test whether measured style inputs improve those xG inputs.

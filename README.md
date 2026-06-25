@@ -17,6 +17,7 @@ The project rule remains:
 - Build a static local report viewer from generated run outputs.
 - Review projection outputs with a local checkpoint before treating them as ready.
 - Build a Poisson probability board from projected team xG for projection review.
+- Open readable Poisson board pages from the static viewer for checkpoint runs.
 - Keep no-betting guardrails active by default.
 
 ## What It Does Not Do Yet
@@ -118,6 +119,7 @@ Commit source, tests, docs, scripts, examples, and sample input fixtures.
 - `docs/V1_RELEASE_NOTES.md`
 - `docs/V1_LIMITATIONS.md`
 - `docs/V1_RUN_CHECKLIST.md`
+- `docs/POISSON_BOARD_VIEWER.md`
 
 ## Roadmap
 
