@@ -33,11 +33,14 @@ REQUIRED_SCRIPTS = [
 IGNORED_OUTPUT_PATHS = [
     "outputs/runs/example/run_manifest.json",
     "outputs/viewer/index.html",
+    "outputs/source_audits/example/source_audit_summary.md",
     "outputs/run_logs/example.csv",
     "outputs/reports/example.md",
     "outputs/projections/example.csv",
     "data/processed/example.csv",
+    "data/source_cache/example.json",
     "data/raw/football-data/E0_2526.csv",
+    "data/raw/scraped/example.json",
     "data/raw/statsbomb-open-data/example.json",
 ]
 

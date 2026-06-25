@@ -30,7 +30,17 @@ def _visible_generated_outputs() -> list[str]:
         completed = subprocess.run(["git", "status", "--short"], capture_output=True, text=True, check=True)
     except (OSError, subprocess.CalledProcessError):
         return []
-    bad_prefixes = ("data/raw/", "data/processed/", "outputs/reports/", "outputs/projections/", "outputs/runs/", "outputs/run_logs/", "outputs/viewer/")
+    bad_prefixes = (
+        "data/raw/",
+        "data/processed/",
+        "data/source_cache/",
+        "outputs/reports/",
+        "outputs/projections/",
+        "outputs/runs/",
+        "outputs/run_logs/",
+        "outputs/viewer/",
+        "outputs/source_audits/",
+    )
     return [line for line in completed.stdout.splitlines() if any(prefix in line.replace("\\", "/") for prefix in bad_prefixes)]
 
 
@@ -53,7 +63,7 @@ def run_operational_health_check() -> dict[str, Any]:
     checks.append({"name": "dependency_imports", "passed": ok, "message": message})
     if not ok:
         failures.append(message)
-    for folder in ["data/raw/football-data", "data/processed", "outputs", "outputs/runs", "outputs/run_logs", "outputs/viewer"]:
+    for folder in ["data/raw/football-data", "data/processed", "outputs", "outputs/runs", "outputs/run_logs", "outputs/viewer", "outputs/source_audits"]:
         ok, message = _ensure_folder(folder)
         checks.append({"name": f"folder_{folder}", "passed": ok, "message": message})
         if not ok:
@@ -71,10 +81,13 @@ def run_operational_health_check() -> dict[str, Any]:
         "outputs/runs/example.html",
         "outputs/run_logs/example.csv",
         "outputs/viewer/index.html",
+        "outputs/source_audits/example/source_audit_summary.md",
         "outputs/reports/example.md",
         "outputs/projections/example.csv",
         "data/processed/example.csv",
+        "data/source_cache/example.json",
         "data/raw/football-data/E0_2526.csv",
+        "data/raw/scraped/example.json",
         "data/raw/statsbomb-open-data/example.json",
     ]:
         ok, message = _git_ignored(ignored_path)
@@ -95,6 +108,7 @@ def run_operational_health_check() -> dict[str, Any]:
         "run-daily-pipeline",
         "run-today",
         "validate-v1",
+        "audit-free-sources",
         "list-runs",
         "build-report-viewer",
         "open-report-viewer",

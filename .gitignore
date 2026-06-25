@@ -26,3 +26,12 @@ outputs/run_logs/**
 outputs/viewer/
 outputs/viewer/*
 outputs/viewer/**
+outputs/source_audits/
+outputs/source_audits/*
+outputs/source_audits/**
+data/source_cache/
+data/source_cache/*
+data/source_cache/**
+data/raw/scraped/
+data/raw/scraped/*
+data/raw/scraped/**

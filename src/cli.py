@@ -20,6 +20,7 @@ from src.data_ingestion.multi_league_football_data import (
     normalize_multi_season_football_data,
 )
 from src.data_ingestion.statsbomb_loader import StatsBombLoader
+from src.data_sources.source_audit import audit_free_sources
 from src.features.event_features import build_team_match_style_log
 from src.features.free_style_proxies import build_free_style_proxies
 from src.features.team_aggregates import build_all_team_style_profiles, build_team_style_profile
@@ -373,6 +374,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("open-report-viewer")
     p.add_argument("--viewer", default="outputs/viewer/index.html")
+
+    p = sub.add_parser("audit-free-sources")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--source")
+    p.add_argument("--competition", default="")
+    p.add_argument("--season", default="")
+    p.add_argument("--as-of-date")
+    p.add_argument("--output-dir", default="outputs/source_audits")
+    p.add_argument("--football-data-raw-dir", default="data/raw/football-data")
 
     return parser
 
@@ -777,6 +788,23 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "open-report-viewer":
         path = Path(args.viewer).resolve()
         print(f"Open this local file in a browser: {path}")
+    elif args.command == "audit-free-sources":
+        result = audit_free_sources(
+            allow_network=args.allow_network,
+            source=args.source,
+            competition=args.competition,
+            season=args.season,
+            as_of_date=args.as_of_date,
+            output_dir=args.output_dir,
+            football_data_raw_dir=args.football_data_raw_dir,
+        )
+        counts = result["manifest"]["result_counts"]
+        print(f"Source audit output: {result['summary_path']}")
+        print(f"Results CSV: {result['results_path']}")
+        print(f"Coverage matrix: {result['coverage_matrix_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Sources audited: {len(result['manifest']['sources_audited'])}")
+        print(f"Status counts: {counts}")
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(
