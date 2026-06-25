@@ -48,6 +48,26 @@ def _source(
 
 def get_source_registry() -> dict[str, dict[str, Any]]:
     return {
+        "openfootball_worldcup": _source(
+            "openfootball_worldcup",
+            "historical_open_data",
+            current_data_expected=True,
+            international_coverage=True,
+            world_cup_coverage=True,
+            requires_network=True,
+            reliability_notes="Candidate static/open fixture backbone for World Cup schedules and results.",
+            limitation_notes="Fixture/schedule structure only. No xG, lineups, or event data.",
+        ),
+        "thestatsapi_worldcup": _source(
+            "thestatsapi_worldcup",
+            "api_like",
+            current_data_expected=True,
+            international_coverage=True,
+            world_cup_coverage=True,
+            requires_network=True,
+            reliability_notes="Candidate free World Cup fixture JSON/CSV source.",
+            limitation_notes="Fixture/schedule structure only unless fields are explicitly present.",
+        ),
         "football_data": _source(
             "football_data",
             "csv",
@@ -154,6 +174,16 @@ def get_source_registry() -> dict[str, dict[str, Any]]:
             requires_network=True,
             reliability_notes="Candidate for national-team and World Cup strength priors.",
             limitation_notes="Strength rating only; not a style/event source.",
+        ),
+        "espn_scoreboard": _source(
+            "espn_scoreboard",
+            "api_like",
+            current_data_expected=True,
+            international_coverage=True,
+            world_cup_coverage=True,
+            requires_network=True,
+            reliability_notes="Free/keyless scoreboard fallback candidate for fixtures, scores, and results.",
+            limitation_notes="Unofficial fallback. Not high trust and not an xG/style source.",
         ),
         "statsbomb_open_data": _source(
             "statsbomb_open_data",

@@ -5,12 +5,15 @@ from src.data_sources.source_result import SourceResult
 
 
 EXPECTED_FIELDS_BY_SOURCE = {
+    "openfootball_worldcup": ["fixtures", "scores", "rounds", "groups"],
+    "thestatsapi_worldcup": ["fixtures", "scores", "rounds", "groups"],
     "sofascore": ["fixtures", "scores", "standings", "match_stats", "shot_xg", "xgot", "lineups", "player_ratings"],
     "whoscored": ["event_actions", "passes", "shots", "dribbles", "tackles", "zones", "player_team_actions"],
     "fbref": ["standard", "shooting", "passing", "defense", "possession", "team_aggregates", "player_aggregates"],
     "understat": ["club_xg", "shot_level_club_data", "top_league_xg"],
     "clubelo": ["club_rating", "rating_date", "club_name"],
     "eloratings": ["national_team_rating", "rating_date", "team_name", "world_cup_context"],
+    "espn_scoreboard": ["fixtures", "scores", "status", "competition"],
     "statsbomb_open_data": ["events", "lineups", "matches", "competitions", "historical_xg"],
 }
 

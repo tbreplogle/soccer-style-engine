@@ -33,8 +33,8 @@ def build_coverage_matrix(audit_results: list[dict[str, Any]] | None = None) -> 
 def recommend_source_stack(use_case: str) -> list[str]:
     recommendations = {
         "club_projection": ["football_data", "clubelo", "understat", "fbref", "sofascore"],
-        "international_projection": ["eloratings", "sofascore", "fbref", "statsbomb_open_data"],
-        "world_cup_projection": ["sofascore", "eloratings", "fbref", "manual_fallback", "statsbomb_open_data"],
+        "international_projection": ["eloratings", "sofascore", "fbref", "espn_scoreboard", "statsbomb_open_data"],
+        "world_cup_projection": ["openfootball_worldcup", "thestatsapi_worldcup", "sofascore", "eloratings", "espn_scoreboard", "fbref", "manual_fallback", "statsbomb_open_data"],
         "style_event_proxy": ["whoscored", "sofascore", "fbref", "statsbomb_open_data"],
         "xg_enrichment": ["sofascore", "understat", "fbref", "statsbomb_open_data"],
         "strength_ratings": ["clubelo", "eloratings", "football_data_model_ratings_fallback"],

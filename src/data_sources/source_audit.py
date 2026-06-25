@@ -9,10 +9,14 @@ import pandas as pd
 
 from src.data_sources.adapters.fbref_adapter import audit_fbref
 from src.data_sources.adapters.football_data_adapter import audit_football_data
+from src.data_sources.adapters.eloratings_adapter import audit_eloratings_current
+from src.data_sources.adapters.espn_scoreboard_adapter import audit_espn_scoreboard
+from src.data_sources.adapters.openfootball_worldcup_adapter import audit_openfootball_worldcup
 from src.data_sources.adapters.planned_adapters import planned_source_probe
 from src.data_sources.adapters.ratings_adapters import audit_clubelo, audit_eloratings
 from src.data_sources.adapters.soccerdata_adapter import audit_soccerdata
 from src.data_sources.adapters.sofascore_adapter import audit_sofascore
+from src.data_sources.adapters.thestatsapi_worldcup_adapter import audit_thestatsapi_worldcup
 from src.data_sources.adapters.understat_adapter import audit_understat
 from src.data_sources.adapters.whoscored_adapter import audit_whoscored
 from src.data_sources.coverage_matrix import build_coverage_matrix, recommend_source_stack
@@ -21,6 +25,8 @@ from src.data_sources.source_result import SourceResult
 
 
 ADAPTERS = {
+    "openfootball_worldcup": lambda allow_network, **kwargs: audit_openfootball_worldcup(allow_network=allow_network)[0],
+    "thestatsapi_worldcup": lambda allow_network, **kwargs: audit_thestatsapi_worldcup(allow_network=allow_network)[0],
     "football_data": lambda allow_network, **kwargs: audit_football_data(kwargs.get("football_data_raw_dir", "data/raw/football-data")),
     "soccerdata": lambda allow_network, **kwargs: audit_soccerdata(allow_network=allow_network),
     "sofascore": lambda allow_network, **kwargs: audit_sofascore(allow_network=allow_network),
@@ -28,7 +34,8 @@ ADAPTERS = {
     "fbref": lambda allow_network, **kwargs: audit_fbref(allow_network=allow_network),
     "understat": lambda allow_network, **kwargs: audit_understat(allow_network=allow_network),
     "clubelo": lambda allow_network, **kwargs: audit_clubelo(allow_network=allow_network),
-    "eloratings": lambda allow_network, **kwargs: audit_eloratings(allow_network=allow_network),
+    "eloratings": lambda allow_network, **kwargs: audit_eloratings_current(allow_network=allow_network)[0],
+    "espn_scoreboard": lambda allow_network, **kwargs: audit_espn_scoreboard(allow_network=allow_network)[0],
     "statsbomb_open_data": lambda allow_network, **kwargs: planned_source_probe("statsbomb_open_data", allow_network=allow_network),
 }
 

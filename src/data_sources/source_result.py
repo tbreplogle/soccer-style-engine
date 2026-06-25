@@ -6,9 +6,15 @@ from typing import Any
 
 DATA_MODE_LABELS = {
     "current_results_stats",
+    "current_fixture_only",
+    "current_fixture_result",
     "current_fixture_stats",
+    "current_fixture_xg",
     "current_event_proxy",
     "current_strength_rating",
+    "current_scoreboard_result",
+    "manual_current_fixture",
+    "fallback_rating_only",
     "historical_event_data",
     "historical_open_data",
     "unavailable",

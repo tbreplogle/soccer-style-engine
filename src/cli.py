@@ -24,6 +24,11 @@ from src.data_sources.source_audit import audit_free_sources
 from src.features.event_features import build_team_match_style_log
 from src.features.free_style_proxies import build_free_style_proxies
 from src.features.team_aggregates import build_all_team_style_profiles, build_team_style_profile
+from src.international_current.current_international_slate import (
+    audit_current_international_sources,
+    build_current_international_slate,
+    project_current_international,
+)
 from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
@@ -384,6 +389,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as-of-date")
     p.add_argument("--output-dir", default="outputs/source_audits")
     p.add_argument("--football-data-raw-dir", default="data/raw/football-data")
+
+    p = sub.add_parser("audit-current-international")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--manual-matchups")
+    p.add_argument("--output-dir", default="outputs/current_international")
+
+    p = sub.add_parser("build-current-international-slate")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--manual-matchups")
+    p.add_argument("--output-dir", default="outputs/current_international")
+
+    p = sub.add_parser("project-current-international")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--manual-matchups")
+    p.add_argument("--max-matches", type=int, default=10)
+    p.add_argument("--output-dir", default="outputs/current_international")
 
     return parser
 
@@ -805,6 +835,50 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Manifest: {result['manifest_path']}")
         print(f"Sources audited: {len(result['manifest']['sources_audited'])}")
         print(f"Status counts: {counts}")
+    elif args.command == "audit-current-international":
+        result = audit_current_international_sources(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            manual_matchups=args.manual_matchups,
+            allow_network=args.allow_network,
+            output_dir=args.output_dir,
+        )
+        counts = result["manifest"]["source_status_counts"]
+        print(f"Current international source summary: {result['source_summary_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Fixtures found: {len(result['fixtures'])}")
+        print(f"Ratings found: {len(result['ratings'])}")
+        print(f"Status counts: {counts}")
+    elif args.command == "build-current-international-slate":
+        result = build_current_international_slate(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            manual_matchups=args.manual_matchups,
+            allow_network=args.allow_network,
+            output_dir=args.output_dir,
+        )
+        print(f"Current international source summary: {result['source_summary_path']}")
+        print(f"Current international slate: {result['slate_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Slate rows: {len(result['slate'])}")
+    elif args.command == "project-current-international":
+        result = project_current_international(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            manual_matchups=args.manual_matchups,
+            allow_network=args.allow_network,
+            max_matches=args.max_matches,
+            output_dir=args.output_dir,
+        )
+        print(f"Current international source summary: {result['source_summary_path']}")
+        print(f"Current international slate: {result['slate_path']}")
+        print(f"Current international projections: {result['projections_path']}")
+        print(f"Current international projection report: {result['projection_report_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Projection rows: {len(result['projections'])}")
+        if not result["projections"].empty:
+            columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level"]
+            print(result["projections"][columns].to_string(index=False))
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

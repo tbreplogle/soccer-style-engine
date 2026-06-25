@@ -20,6 +20,8 @@ pytestmark = pytest.mark.quick
 def test_source_registry_contains_required_sources():
     registry = get_source_registry()
     for source in [
+        "openfootball_worldcup",
+        "thestatsapi_worldcup",
         "football_data",
         "soccerdata",
         "sofascore",
@@ -28,6 +30,7 @@ def test_source_registry_contains_required_sources():
         "understat",
         "clubelo",
         "eloratings",
+        "espn_scoreboard",
         "statsbomb_open_data",
     ]:
         assert source in registry
@@ -75,7 +78,7 @@ def test_coverage_matrix_builds():
 
 def test_source_recommendations():
     assert recommend_source_stack("club_projection")[:2] == ["football_data", "clubelo"]
-    assert recommend_source_stack("world_cup_projection")[:2] == ["sofascore", "eloratings"]
+    assert recommend_source_stack("world_cup_projection")[:2] == ["openfootball_worldcup", "thestatsapi_worldcup"]
     assert recommend_source_stack("style_event_proxy")[:2] == ["whoscored", "sofascore"]
     with pytest.raises(ValueError):
         recommend_source_stack("unsupported")
@@ -108,7 +111,7 @@ def test_audit_free_sources_command_exists_and_no_network_mode_works(tmp_path):
         text=True,
         check=True,
     )
-    assert "Sources audited: 9" in result.stdout
+    assert "Sources audited: 12" in result.stdout
     assert (tmp_path / "audits" / "2026-05-25_local" / "source_audit_summary.md").exists()
     assert (tmp_path / "audits" / "2026-05-25_local" / "source_audit_results.csv").exists()
     assert (tmp_path / "audits" / "2026-05-25_local" / "source_audit_manifest.json").exists()

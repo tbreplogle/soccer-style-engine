@@ -1,0 +1,3 @@
+match_date,competition,round_name,group_name,home_team,away_team,neutral_site,venue,source_name,notes
+2026-06-24,FIFA World Cup,Group Stage,Group A,United States,Canada,true,Sample Neutral Venue,manual_sample,Instructional sample row for current international manual fallback.
+2026-06-25,FIFA World Cup,Group Stage,Group B,France,Japan,true,Sample Neutral Venue,manual_sample,Instructional sample row for current international manual fallback.
