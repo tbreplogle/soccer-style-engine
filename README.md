@@ -15,6 +15,8 @@ The project rule remains:
 - Run currentness, season sanity, leakage, calibration, and validation checks.
 - Write daily run manifests, summaries, logs, projections, and reports.
 - Build a static local report viewer from generated run outputs.
+- Review projection outputs with a local checkpoint before treating them as ready.
+- Build a Poisson probability board from projected team xG for projection review.
 - Keep no-betting guardrails active by default.
 
 ## What It Does Not Do Yet
@@ -103,6 +105,7 @@ Generated outputs are ignored and should not be committed:
 - `outputs/runs/`
 - `outputs/run_logs/`
 - `outputs/viewer/`
+- `outputs/projection_checkpoints/`
 - `outputs/reports/`
 - `outputs/projections/`
 - `data/processed/`

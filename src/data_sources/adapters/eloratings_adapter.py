@@ -11,9 +11,16 @@ from src.international_current.team_name_normalization import normalize_team_nam
 DEFAULT_ELORATINGS_SAMPLE = Path("data/sample/eloratings_sample.csv")
 
 
+def _is_sample_path(path: Path) -> bool:
+    normalized = [part.lower() for part in path.parts]
+    return "data" in normalized and "sample" in normalized
+
+
 def parse_eloratings(path: str | Path) -> list[CurrentInternationalTeamRating]:
     ratings = []
-    with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+    source_path = Path(path)
+    is_sample = _is_sample_path(source_path)
+    with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
         for row in csv.DictReader(handle):
             normalized = normalize_team_name(str(row.get("team") or row.get("Team") or ""))
             ratings.append(CurrentInternationalTeamRating(
@@ -25,7 +32,9 @@ def parse_eloratings(path: str | Path) -> list[CurrentInternationalTeamRating]:
                 rank=int(row["rank"]) if row.get("rank") else None,
                 matches_played=int(row["matches_played"]) if row.get("matches_played") else None,
                 source_url=str(row.get("source_url") or ""),
-                reliability_status="local_sample_or_cache",
+                reliability_status="sample_only" if is_sample else "local_cache",
+                source_tier="sample" if is_sample else "real",
+                is_sample_data=is_sample,
                 warnings=list(dict.fromkeys([
                     "EloRatings is a strength prior only, not style/event data.",
                     normalized.warning,

@@ -31,14 +31,14 @@ def _poisson_probability(lam: float, goals: int) -> float:
 
 
 def _scoreline(home_xg: float, away_xg: float) -> str:
-    best_score = "1-1"
+    best_score = "1 - 1"
     best_prob = -1.0
     for home_goals in range(6):
         for away_goals in range(6):
             probability = _poisson_probability(home_xg, home_goals) * _poisson_probability(away_xg, away_goals)
             if probability > best_prob:
                 best_prob = probability
-                best_score = f"{home_goals}-{away_goals}"
+                best_score = f"{home_goals} - {away_goals}"
     return best_score
 
 
@@ -75,6 +75,23 @@ def data_support_for_rating_projection(
     return "low_fixture_only"
 
 
+def rating_status_and_warning(
+    home_team: str,
+    away_team: str,
+    home_rating: CurrentInternationalTeamRating | None,
+    away_rating: CurrentInternationalTeamRating | None,
+) -> tuple[str, str]:
+    home_missing = home_rating is None or home_rating.rating_value is None
+    away_missing = away_rating is None or away_rating.rating_value is None
+    if home_missing and away_missing:
+        return "both_ratings_missing", "Both team ratings missing; neutral baseline xG split used."
+    if home_missing:
+        return "home_rating_missing", "One team rating missing; fallback rating used for missing side."
+    if away_missing:
+        return "away_rating_missing", "One team rating missing; fallback rating used for missing side."
+    return "both_ratings_available", ""
+
+
 def project_from_fixture_and_ratings(
     fixture: CurrentInternationalFixture | None,
     home_rating: CurrentInternationalTeamRating | None,
@@ -85,6 +102,7 @@ def project_from_fixture_and_ratings(
     home_team = fixture.home_team if fixture else (home_rating.team if home_rating else "")
     away_team = fixture.away_team if fixture else (away_rating.team if away_rating else "")
     support = data_support_for_rating_projection(fixture, home_rating, away_rating)
+    rating_status, rating_warning = rating_status_and_warning(home_team, away_team, home_rating, away_rating)
     warnings = [RATING_ONLY_WARNING, "Elo-style ratings are strength priors only, not style advantages."]
     if fixture is None:
         warnings.append("No current fixture available.")
@@ -92,6 +110,8 @@ def project_from_fixture_and_ratings(
         warnings.append(f"Missing rating for {home_team or 'home team'}.")
     if away_rating is None or away_rating.rating_value is None:
         warnings.append(f"Missing rating for {away_team or 'away team'}.")
+    if rating_warning:
+        warnings.append(rating_warning)
     if support in {"low_fixture_only", "low_manual_fixture_rating", "insufficient"}:
         warnings.append("Confidence is capped because fixture/rating support is incomplete or manual-only.")
     home_value = float(home_rating.rating_value) if home_rating and home_rating.rating_value is not None else 1800.0
@@ -117,6 +137,8 @@ def project_from_fixture_and_ratings(
         "away_win_probability": away_win,
         "most_likely_score": _scoreline(home_xg, away_xg),
         "data_support_level": support,
+        "rating_status": rating_status,
+        "rating_warning": rating_warning,
         "reliability_status": "rating_only_baseline",
         "confidence_score": confidence_score,
         "confidence_label": "Medium-Low" if confidence_score >= 45 else "Low",

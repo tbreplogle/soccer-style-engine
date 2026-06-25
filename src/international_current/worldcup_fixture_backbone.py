@@ -15,8 +15,8 @@ from src.international_current.current_international_schema import CurrentIntern
 from src.international_current.team_name_normalization import normalize_team_pair
 
 
-DEFAULT_FIXTURE_SAMPLE = Path("data/sample/worldcup_static_fixtures_openfootball_sample.json")
-DEFAULT_RATING_SAMPLE = Path("data/sample/eloratings_sample.csv")
+DEFAULT_FIXTURE_CACHE = Path("data/source_cache/openfootball/openfootball_worldcup.json")
+DEFAULT_RATING_CACHE = Path("data/source_cache/eloratings/eloratings_current.csv")
 
 
 def _fixture_key(fixture: CurrentInternationalFixture) -> tuple[str, str, str, str]:
@@ -71,7 +71,7 @@ def load_manual_fixture_csv(path: str | Path) -> list[CurrentInternationalFixtur
 
 
 def load_static_worldcup_fixtures(
-    path: str | Path = DEFAULT_FIXTURE_SAMPLE,
+    path: str | Path = DEFAULT_FIXTURE_CACHE,
     *,
     competition: str = "FIFA World Cup",
 ) -> list[CurrentInternationalFixture]:
@@ -86,11 +86,12 @@ def load_static_worldcup_fixtures(
                 **fixture.to_dict(),
                 "home_team": home,
                 "away_team": away,
-                "warnings": list(dict.fromkeys([
+                "warnings": list(dict.fromkeys(warning for warning in [
                     *fixture.warnings,
                     *warnings,
+                    "Sample fixture data only. Do not treat this as a real current matchup." if fixture.is_sample_data else "",
                     "Static fixture backbone only; no current event data, xG, lineups, injuries, or style inputs.",
-                ])),
+                ] if warning)),
             }
         ))
     return dedupe_fixtures(normalized)
@@ -173,19 +174,20 @@ def build_worldcup_backbone(
     as_of_date: str,
     competition: str = "FIFA World Cup",
     allow_network: bool = False,
-    fixture_source: str | Path = DEFAULT_FIXTURE_SAMPLE,
-    ratings_source: str | Path = DEFAULT_RATING_SAMPLE,
+    allow_sample_data: bool = False,
+    fixture_source: str | Path = DEFAULT_FIXTURE_CACHE,
+    ratings_source: str | Path = DEFAULT_RATING_CACHE,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
     fixture_result, fixtures = audit_openfootball_worldcup(
         cache_path=fixture_source,
         allow_network=allow_network,
-        use_sample_fallback=True,
+        use_sample_fallback=allow_sample_data,
     )
     rating_result, ratings = audit_eloratings_current(
         cache_path=ratings_source,
         allow_network=allow_network,
-        use_sample_fallback=True,
+        use_sample_fallback=allow_sample_data,
     )
     fixtures = dedupe_fixtures(fixtures)
     rating_names = {rating.team for rating in ratings if rating.team and rating.rating_value is not None}
@@ -210,6 +212,7 @@ def build_worldcup_backbone(
         "as_of_date": as_of_date,
         "competition": competition,
         "allow_network": allow_network,
+        "allow_sample_data": allow_sample_data,
         "fixture_source": str(fixture_source),
         "ratings_source": str(ratings_source),
         "fixture_count": len(fixtures),

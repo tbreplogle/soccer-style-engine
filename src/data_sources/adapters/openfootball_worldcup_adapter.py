@@ -10,6 +10,12 @@ from src.international_current.team_name_normalization import normalize_team_pai
 
 
 DEFAULT_OPENFOOTBALL_SAMPLE = Path("data/sample/worldcup_static_fixtures_openfootball_sample.json")
+NO_REAL_FIXTURE_WARNING = "No real current fixture source available. Provide --manual-matchups or run with --allow-sample-data for demo output."
+
+
+def _is_sample_path(path: Path) -> bool:
+    normalized = [part.lower() for part in path.parts]
+    return "data" in normalized and "sample" in normalized
 
 
 def _status(value: str | None) -> str:
@@ -20,7 +26,9 @@ def _status(value: str | None) -> str:
 
 
 def parse_openfootball_fixtures(path: str | Path) -> list[CurrentInternationalFixture]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    source_path = Path(path)
+    data = json.loads(source_path.read_text(encoding="utf-8"))
+    is_sample = _is_sample_path(source_path)
     matches = data.get("matches", data if isinstance(data, list) else [])
     fixtures = []
     for index, row in enumerate(matches):
@@ -28,6 +36,14 @@ def parse_openfootball_fixtures(path: str | Path) -> list[CurrentInternationalFi
         away = row.get("away_team") or row.get("team2") or row.get("away")
         home_norm, away_norm, name_warnings = normalize_team_pair(str(home or ""), str(away or ""))
         has_score = row.get("home_score") is not None or row.get("away_score") is not None
+        warnings = [
+            "OpenFootball fixture source provides schedule/results only.",
+            "Static fixtures are not event, tracking, xG, lineup, injury, rating, or style data.",
+            "Scores/results are present." if has_score else "Fixture-only row; scores/results are not present.",
+            *name_warnings,
+        ]
+        if is_sample:
+            warnings.insert(0, "Sample fixture data only. Do not treat this as a real current matchup.")
         fixtures.append(CurrentInternationalFixture(
             source_name="openfootball_worldcup",
             source_match_id=str(row.get("id") or row.get("source_match_id") or index),
@@ -45,13 +61,10 @@ def parse_openfootball_fixtures(path: str | Path) -> list[CurrentInternationalFi
             round_name=str(row.get("round_name") or row.get("round") or ""),
             group_name=str(row.get("group_name") or row.get("group") or ""),
             source_url=str(row.get("source_url") or ""),
-            reliability_status="local_sample_or_cache",
-            warnings=list(dict.fromkeys([
-                "OpenFootball fixture source provides schedule/results only.",
-                "Static fixtures are not event, tracking, xG, lineup, injury, rating, or style data.",
-                "Scores/results are present." if has_score else "Fixture-only row; scores/results are not present.",
-                *name_warnings,
-            ])),
+            reliability_status="sample_only" if is_sample else "local_cache",
+            source_tier="sample" if is_sample else "real",
+            is_sample_data=is_sample,
+            warnings=list(dict.fromkeys(warning for warning in warnings if warning)),
         ))
     return fixtures
 
@@ -89,9 +102,9 @@ def audit_openfootball_worldcup(
                 "Using committed sample fixture backbone." if fallback_used else "Using local OpenFootball cache.",
             ],
         ), fixtures
-    warning = "OpenFootball local cache not found."
+    warning = NO_REAL_FIXTURE_WARNING
     if allow_network:
-        warning += " Public OpenFootball/football.db fetch can be added behind allow_network, but no URL is configured in Phase 24."
+        warning += " Public OpenFootball/football.db fetch can be added behind allow_network, but no URL is configured in Phase 25."
     return SourceResult(
         source_name="openfootball_worldcup",
         status="skipped",

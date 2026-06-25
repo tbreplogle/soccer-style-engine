@@ -25,6 +25,7 @@ DATA_SUPPORT_LEVELS = {
     "low_fixture_only",
     "historical_context_only",
     "insufficient",
+    "sample_demo_only",
 }
 
 
@@ -53,6 +54,8 @@ class CurrentInternationalFixture(_DictMixin):
     group_name: str = ""
     source_url: str = ""
     reliability_status: str = "unknown"
+    source_tier: str = "real"
+    is_sample_data: bool = False
     warnings: list[str] = field(default_factory=list)
 
 
@@ -67,6 +70,8 @@ class CurrentInternationalTeamRating(_DictMixin):
     matches_played: int | None = None
     source_url: str = ""
     reliability_status: str = "unknown"
+    source_tier: str = "real"
+    is_sample_data: bool = False
     warnings: list[str] = field(default_factory=list)
 
 
@@ -96,6 +101,8 @@ class CurrentInternationalMatchStats(_DictMixin):
     player_ratings_available: bool = False
     data_mode: str = "unavailable"
     reliability_status: str = "unknown"
+    source_tier: str = "real"
+    is_sample_data: bool = False
     warnings: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -121,6 +128,8 @@ class CurrentInternationalSlateRow(_DictMixin):
     data_mode: str = "unavailable"
     data_support_level: str = "insufficient"
     reliability_status: str = "unknown"
+    source_tier: str = "real"
+    is_sample_data: bool = False
     warnings: str = ""
     style_inputs_available: bool = False
     style_inputs_warning: str = ""

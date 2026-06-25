@@ -11,7 +11,7 @@ import pandas as pd
 from src.data_sources.adapters.eloratings_adapter import audit_eloratings_current
 from src.data_sources.adapters.espn_scoreboard_adapter import audit_espn_scoreboard
 from src.data_sources.adapters.fbref_adapter import audit_fbref_international
-from src.data_sources.adapters.openfootball_worldcup_adapter import audit_openfootball_worldcup
+from src.data_sources.adapters.openfootball_worldcup_adapter import NO_REAL_FIXTURE_WARNING, audit_openfootball_worldcup
 from src.data_sources.adapters.sofascore_adapter import audit_sofascore_current_international
 from src.data_sources.source_result import SourceResult
 from src.international_current.current_international_schema import (
@@ -43,9 +43,62 @@ SLATE_COLUMNS = [
     "data_mode",
     "data_support_level",
     "reliability_status",
+    "source_tier",
+    "is_sample_data",
     "warnings",
     "style_inputs_available",
     "style_inputs_warning",
+]
+
+PROJECTION_COLUMNS = [
+    "as_of_date",
+    "team_a",
+    "team_b",
+    "neutral_site",
+    "competition_context",
+    "projection_profile",
+    "baseline_mode_used",
+    "team_a_xg_base",
+    "team_b_xg_base",
+    "team_a_xg_final",
+    "team_b_xg_final",
+    "projected_total",
+    "most_likely_score",
+    "team_a_win_prob",
+    "draw_prob",
+    "team_b_win_prob",
+    "confidence_score",
+    "confidence_label",
+    "risk_flags",
+    "international_context_warnings",
+    "data_mode",
+    "home_rating",
+    "away_rating",
+    "rating_diff",
+    "match_date",
+    "competition",
+    "round_name",
+    "group_name",
+    "current_fixture_data_mode",
+    "data_support_level",
+    "rating_status",
+    "rating_warning",
+    "reliability_status",
+    "source_tier",
+    "is_sample_data",
+    "source_fixture_name",
+    "rating_source_name",
+    "stats_source_name",
+    "scoreboard_source_name",
+    "current_source_warnings",
+    "phase22_guardrails",
+    "style_inputs_available",
+    "style_inputs_warning",
+    "rating_only_warning",
+    "primary_warning",
+    "source_warning",
+    "style_warning",
+    "guardrail_flags",
 ]
 
 
@@ -107,8 +160,10 @@ def parse_manual_current_matchups(path: str | Path) -> list[CurrentInternational
                 group_name=row.get("group_name") or "",
                 source_url=row.get("source_url") or "",
                 reliability_status="manual_fallback",
+                source_tier="manual",
+                is_sample_data=False,
                 warnings=[
-                    "Manual fixture fallback; verify teams, venue, neutral-site status, and kickoff externally.",
+                    "Manual fixture is user supplied and not source-verified; verify teams, venue, neutral-site status, and kickoff externally.",
                     *name_warnings,
                     row.get("notes") or "No current stats/xG attached to this manual fixture.",
                 ],
@@ -125,6 +180,8 @@ def determine_data_support_level(
         return "high_current_fixture_stats_xg"
     if stats:
         return "high_current_fixture_stats"
+    if fixture and fixture.is_sample_data:
+        return "sample_demo_only"
     if fixture and rating:
         if fixture.source_name == "espn_scoreboard":
             return "medium_current_fixture_scoreboard_rating"
@@ -161,6 +218,12 @@ def _rating_for_fixture(
     return ratings.get(fixture.home_team), ratings.get(fixture.away_team)
 
 
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+
 def _fixture_to_slate_row(
     fixture: CurrentInternationalFixture,
     ratings: dict[str, CurrentInternationalTeamRating],
@@ -177,6 +240,11 @@ def _fixture_to_slate_row(
         "SofaScore/basic stats are not true tracking data." if stats else "No current xG/style claims are made from fixture-only inputs.",
         "Proxy score adjustments remain disabled.",
     ]))
+    if fixture.is_sample_data:
+        warnings = list(dict.fromkeys([
+            "Sample fixture data only. Do not treat this as a real current matchup.",
+            *warnings,
+        ]))
     return CurrentInternationalSlateRow(
         match_date=fixture.match_date,
         competition=fixture.competition,
@@ -194,6 +262,8 @@ def _fixture_to_slate_row(
         data_mode=mode,
         data_support_level=determine_data_support_level(fixture, rating, stats),
         reliability_status=fixture.reliability_status,
+        source_tier=fixture.source_tier or ("sample" if fixture.is_sample_data else "manual" if fixture.reliability_status == "manual_fallback" else "real"),
+        is_sample_data=fixture.is_sample_data,
         warnings=" | ".join(warnings),
         style_inputs_available=False,
         style_inputs_warning="No current event/xG/tracking/style-aware matchup inputs are available for this slate row.",
@@ -269,11 +339,12 @@ def audit_current_international_sources(
     competition: str = "FIFA World Cup",
     manual_matchups: str | Path | None = None,
     allow_network: bool = False,
+    allow_sample_data: bool = False,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
     openfootball_result, openfootball_fixtures = audit_openfootball_worldcup(
         allow_network=allow_network,
-        use_sample_fallback=True,
+        use_sample_fallback=allow_sample_data,
     )
     # Phase 24 does not depend on SofaScore after the safe probe returned HTTP 403.
     # Use cache/local mode only here; do not force live SofaScore access in the default workflow.
@@ -284,7 +355,10 @@ def audit_current_international_sources(
     )
     if allow_network:
         sofascore_result.warnings.append("SofaScore live probing is intentionally not forced in the Phase 24 default backbone after safe requests returned HTTP 403.")
-    eloratings_result, ratings = audit_eloratings_current(allow_network=allow_network, use_sample_fallback=True)
+    eloratings_result, ratings = audit_eloratings_current(
+        allow_network=allow_network,
+        use_sample_fallback=allow_sample_data or bool(manual_matchups),
+    )
     espn_result, espn_fixtures = audit_espn_scoreboard(allow_network=allow_network)
     fbref_result = audit_fbref_international(allow_network=allow_network)
     manual_fixtures = parse_manual_current_matchups(manual_matchups) if manual_matchups else []
@@ -311,7 +385,11 @@ def audit_current_international_sources(
         "as_of_date": as_of_date or date.today().isoformat(),
         "competition": competition,
         "allow_network": allow_network,
+        "allow_sample_data": allow_sample_data,
         "fixture_count": len(fixtures),
+        "real_fixture_count": len([fixture for fixture in fixtures if not fixture.is_sample_data and fixture.source_tier != "manual"]),
+        "manual_fixture_count": len([fixture for fixture in fixtures if fixture.source_tier == "manual" or fixture.reliability_status == "manual_fallback"]),
+        "sample_fixture_count": len([fixture for fixture in fixtures if fixture.is_sample_data or fixture.source_tier == "sample"]),
         "rating_count": len(ratings),
         "teams_missing_ratings": missing_ratings,
         "teams_missing_ratings_count": len(missing_ratings),
@@ -336,6 +414,7 @@ def audit_current_international_sources(
             "betting_recommendations": False,
         },
         "output_paths": {"source_summary": str(summary_path)},
+        "warnings": [] if fixtures else [NO_REAL_FIXTURE_WARNING],
     }
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
     return {
@@ -356,6 +435,7 @@ def build_current_international_slate(
     competition: str = "FIFA World Cup",
     manual_matchups: str | Path | None = None,
     allow_network: bool = False,
+    allow_sample_data: bool = False,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
     audit = audit_current_international_sources(
@@ -363,6 +443,7 @@ def build_current_international_slate(
         competition=competition,
         manual_matchups=manual_matchups,
         allow_network=allow_network,
+        allow_sample_data=allow_sample_data,
         output_dir=output_dir,
     )
     ratings = _rating_lookup(audit["ratings"])
@@ -442,6 +523,7 @@ def project_current_international(
     competition: str = "FIFA World Cup",
     manual_matchups: str | Path | None = None,
     allow_network: bool = False,
+    allow_sample_data: bool = False,
     max_matches: int = 10,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
@@ -450,6 +532,7 @@ def project_current_international(
         competition=competition,
         manual_matchups=manual_matchups,
         allow_network=allow_network,
+        allow_sample_data=allow_sample_data,
         output_dir=output_dir,
     )
     slate = slate_result["slate"].head(max_matches).copy()
@@ -507,6 +590,8 @@ def project_current_international(
             "home_rating": baseline["home_rating"],
             "away_rating": baseline["away_rating"],
             "rating_diff": baseline["rating_diff"],
+            "rating_status": baseline["rating_status"],
+            "rating_warning": baseline["rating_warning"],
         }
         row.update({
             "match_date": matchup["match_date"],
@@ -516,6 +601,8 @@ def project_current_international(
             "current_fixture_data_mode": matchup["data_mode"],
             "data_support_level": matchup["data_support_level"],
             "reliability_status": matchup["reliability_status"],
+            "source_tier": matchup.get("source_tier", ""),
+            "is_sample_data": matchup.get("is_sample_data", False),
             "source_fixture_name": matchup["source_fixture_name"],
             "rating_source_name": matchup["rating_source_name"],
             "stats_source_name": matchup["stats_source_name"],
@@ -525,9 +612,19 @@ def project_current_international(
             "style_inputs_available": matchup.get("style_inputs_available", False),
             "style_inputs_warning": matchup.get("style_inputs_warning", "No current style-aware matchup inputs are available."),
             "rating_only_warning": baseline["warnings"],
+            "primary_warning": (
+                "Sample fixture data only. Do not treat this as a real current matchup."
+                if _truthy(matchup.get("is_sample_data", False))
+                else "Manual fixture is user supplied and not source-verified."
+                if str(matchup.get("source_tier", "")) == "manual"
+                else "Fixture + rating baseline only; no current style inputs."
+            ),
+            "source_warning": matchup["warnings"],
+            "style_warning": matchup.get("style_inputs_warning", "No current style-aware matchup inputs are available."),
+            "guardrail_flags": "current_statsbomb_used=false | proxy_adjustments_enabled=false | no_betting_recommendations=true",
         })
         rows.append(row)
-    projections = pd.DataFrame(rows)
+    projections = pd.DataFrame(rows, columns=PROJECTION_COLUMNS)
     run_dir = slate_result["run_dir"]
     projection_path = run_dir / "current_international_projections.csv"
     projections.to_csv(projection_path, index=False)
