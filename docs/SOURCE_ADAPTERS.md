@@ -80,3 +80,7 @@ Phase 23 upgrades SofaScore from a planned adapter shell to a conservative probe
 The probe uses cache-first JSON reads from `data/source_cache/sofascore/`, optional polite `urllib` requests when `--allow-network` is set, and generated reports under `outputs/source_probes/sofascore/`.
 
 It may find fixtures, scores, match stats, xG/xGOT, lineups, and player ratings when those fields are present. Missing fields stay missing. The adapter does not use browser automation and does not bypass access controls.
+
+## Phase 24 World Cup Backbone
+
+The default World Cup/current international backbone uses OpenFootball-style static fixtures and EloRatings-style local/sample ratings. TheStatsAPI, API-key feeds, signup-required sources, paid APIs, and current StatsBomb are excluded from this default workflow.

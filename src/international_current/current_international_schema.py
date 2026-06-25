@@ -113,6 +113,7 @@ class CurrentInternationalSlateRow(_DictMixin):
     away_team: str
     neutral_site: str = "unknown"
     source_fixture_status: str = "unknown"
+    fixture_source_name: str = ""
     source_fixture_name: str = ""
     rating_source_name: str = ""
     stats_source_name: str = ""
@@ -121,6 +122,8 @@ class CurrentInternationalSlateRow(_DictMixin):
     data_support_level: str = "insufficient"
     reliability_status: str = "unknown"
     warnings: str = ""
+    style_inputs_available: bool = False
+    style_inputs_warning: str = ""
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:

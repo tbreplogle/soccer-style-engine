@@ -30,6 +30,7 @@ from src.international_current.current_international_slate import (
     build_current_international_slate,
     project_current_international,
 )
+from src.international_current.worldcup_fixture_backbone import build_worldcup_backbone
 from src.models.backtest import run_backtest
 from src.models.baseline_diagnostics import run_baseline_diagnostics
 from src.models.current_backtest import run_current_backtest
@@ -401,6 +402,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache-dir", default="data/source_cache/sofascore")
     p.add_argument("--output-dir", default="outputs/source_probes/sofascore")
     p.add_argument("--max-matches", type=int, default=5)
+
+    p = sub.add_parser("build-worldcup-backbone")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--competition", default="FIFA World Cup")
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--no-network", action="store_true", default=True)
+    p.add_argument("--fixture-source", default="data/sample/worldcup_static_fixtures_openfootball_sample.json")
+    p.add_argument("--ratings-source", default="data/sample/eloratings_sample.csv")
+    p.add_argument("--output-dir", default="outputs/current_international")
 
     p = sub.add_parser("audit-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -869,6 +879,24 @@ def main(argv: list[str] | None = None) -> None:
         print(f"xGOT found: {manifest['xgot_found']}")
         print(f"Lineups found: {manifest['lineups_found']}")
         print(f"Player ratings found: {manifest['player_ratings_found']}")
+    elif args.command == "build-worldcup-backbone":
+        result = build_worldcup_backbone(
+            as_of_date=args.as_of_date,
+            competition=args.competition,
+            allow_network=args.allow_network,
+            fixture_source=args.fixture_source,
+            ratings_source=args.ratings_source,
+            output_dir=args.output_dir,
+        )
+        manifest = result["manifest"]
+        print(f"World Cup backbone summary: {result['summary_path']}")
+        print(f"Fixture backbone CSV: {result['fixture_path']}")
+        print(f"Rating backbone CSV: {result['rating_path']}")
+        print(f"Manifest: {result['manifest_path']}")
+        print(f"Fixtures found: {manifest['fixture_count']}")
+        print(f"Ratings found: {manifest['rating_count']}")
+        print(f"Teams missing ratings: {manifest['teams_missing_ratings_count']}")
+        print(f"Readiness: {manifest['readiness_status']}")
     elif args.command == "audit-current-international":
         result = audit_current_international_sources(
             as_of_date=args.as_of_date,

@@ -1,0 +1,42 @@
+{
+  "competition": "FIFA World Cup",
+  "season": "2026",
+  "matches": [
+    {
+      "id": "ofwc-2026-001",
+      "date": "2026-06-24",
+      "time": "20:00:00",
+      "team1": "USA",
+      "team2": "Canada",
+      "round": "Group Stage",
+      "group": "Group A",
+      "neutral_site": "true",
+      "venue": "Sample Neutral Venue",
+      "status": "scheduled"
+    },
+    {
+      "id": "ofwc-2026-002",
+      "date": "2026-06-25",
+      "time": "18:00:00",
+      "team1": "France",
+      "team2": "Japan",
+      "round": "Group Stage",
+      "group": "Group B",
+      "neutral_site": "true",
+      "venue": "Sample Neutral Venue",
+      "status": "scheduled"
+    },
+    {
+      "id": "ofwc-2026-003",
+      "date": "2026-06-26",
+      "time": "21:00:00",
+      "team1": "Korea Republic",
+      "team2": "Cote d'Ivoire",
+      "round": "Group Stage",
+      "group": "Group C",
+      "neutral_site": "true",
+      "venue": "Sample Neutral Venue",
+      "status": "scheduled"
+    }
+  ]
+}

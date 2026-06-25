@@ -78,7 +78,7 @@ def test_coverage_matrix_builds():
 
 def test_source_recommendations():
     assert recommend_source_stack("club_projection")[:2] == ["football_data", "clubelo"]
-    assert recommend_source_stack("world_cup_projection")[:2] == ["openfootball_worldcup", "thestatsapi_worldcup"]
+    assert recommend_source_stack("world_cup_projection")[:2] == ["openfootball_worldcup", "eloratings"]
     assert recommend_source_stack("style_event_proxy")[:2] == ["whoscored", "sofascore"]
     with pytest.raises(ValueError):
         recommend_source_stack("unsupported")

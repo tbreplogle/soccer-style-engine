@@ -10,7 +10,11 @@ from src.international_current.current_international_schema import (
 
 
 def __getattr__(name: str):
-    if name in {"audit_current_international_sources", "build_current_international_slate", "project_current_international"}:
+    if name in {"audit_current_international_sources", "build_current_international_slate", "build_worldcup_backbone", "project_current_international"}:
+        if name == "build_worldcup_backbone":
+            from src.international_current import worldcup_fixture_backbone
+
+            return getattr(worldcup_fixture_backbone, name)
         from src.international_current import current_international_slate
 
         return getattr(current_international_slate, name)
@@ -24,5 +28,6 @@ __all__ = [
     "CurrentInternationalTeamRating",
     "audit_current_international_sources",
     "build_current_international_slate",
+    "build_worldcup_backbone",
     "project_current_international",
 ]

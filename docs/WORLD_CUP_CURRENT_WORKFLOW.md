@@ -3,8 +3,8 @@
 Use this workflow when current World Cup fixtures are needed but a verified current event feed is unavailable.
 
 1. Audit available free sources with no network by default.
-2. Probe SofaScore in no-network mode first, then with `--allow-network` only when safe.
-3. Build a current international slate from local cache or manual fallback fixtures.
+2. Build the OpenFootball + EloRatings backbone.
+3. Treat SofaScore as cache/probe-only because safe live requests returned HTTP 403.
 4. Run projections through the existing international model.
 5. Read the support labels before using any output.
 
@@ -23,11 +23,11 @@ The default manual sample demonstrates workflow mechanics only. It does not clai
 
 ## Source Priority
 
-1. Cached/local SofaScore fixture data.
-2. Network SofaScore fixture data when `--allow-network` is set.
-3. OpenFootball/TheStatsAPI fixture backbone when local cache exists.
-4. ESPN scoreboard fallback.
-5. Manual fallback CSV.
+1. OpenFootball/static fixture backbone.
+2. SofaScore cache only if already available.
+3. ESPN scoreboard fallback.
+4. Manual fallback CSV.
 
 SofaScore fixture-only rows remain low support. SofaScore stats can raise support only when actual parsed statistic fields exist.
+TheStatsAPI is not part of the Phase 24 no-signup default workflow.
 

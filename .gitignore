@@ -38,6 +38,12 @@ outputs/current_international/**
 data/source_cache/
 data/source_cache/*
 data/source_cache/**
+data/source_cache/openfootball/
+data/source_cache/openfootball/*
+data/source_cache/openfootball/**
+data/source_cache/eloratings/
+data/source_cache/eloratings/*
+data/source_cache/eloratings/**
 data/source_cache/sofascore/
 data/source_cache/sofascore/*
 data/source_cache/sofascore/**

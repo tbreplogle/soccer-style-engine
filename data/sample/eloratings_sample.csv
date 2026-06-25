@@ -1,0 +1,7 @@
+team,rating_value,rating_type,rating_date,rank,source_name
+United States,1810,elo,2026-06-20,18,eloratings_sample
+Canada,1740,elo,2026-06-20,31,eloratings_sample
+France,1985,elo,2026-06-20,3,eloratings_sample
+Japan,1845,elo,2026-06-20,15,eloratings_sample
+South Korea,1775,elo,2026-06-20,28,eloratings_sample
+Cote d'Ivoire,1710,elo,2026-06-20,40,eloratings_sample

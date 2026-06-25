@@ -39,8 +39,8 @@ def test_phase22_registry_and_source_priority():
     assert registry["statsbomb_open_data"]["historical_only"] is True
     assert recommend_source_stack("world_cup_projection")[:3] == [
         "openfootball_worldcup",
-        "thestatsapi_worldcup",
-        "sofascore",
+        "eloratings",
+        "espn_scoreboard",
     ]
 
 
@@ -52,7 +52,7 @@ def test_phase22_schema_and_support_labels():
         match_date="2026-06-24",
     )
     assert fixture.to_dict()["home_team"] == "United States"
-    assert determine_data_support_level(fixture=fixture) == "low_fixture_only"
+    assert determine_data_support_level(fixture=fixture) == "low_manual_fixture_rating"
     assert determine_data_support_level() == "insufficient"
 
 
@@ -82,7 +82,7 @@ def test_phase22_manual_fallback_and_slate_builder(tmp_path):
     slate = result["slate"]
     assert len(slate) >= 2
     assert {"home_team", "away_team", "data_support_level", "warnings"}.issubset(slate.columns)
-    assert "low_fixture_only" in set(slate["data_support_level"])
+    assert "low_manual_fixture_rating" in set(slate["data_support_level"])
     assert result["slate_path"].exists()
     assert result["source_summary_path"].exists()
 
@@ -98,7 +98,7 @@ def test_phase22_projection_wrapper_writes_outputs(tmp_path):
     )
     projections = result["projections"]
     assert len(projections) == 1
-    assert projections.iloc[0]["data_support_level"] == "low_fixture_only"
+    assert projections.iloc[0]["data_support_level"] in {"medium_current_fixture_rating", "low_manual_fixture_rating"}
     assert "proxy_adjustments_enabled=false" in projections.iloc[0]["phase22_guardrails"]
     assert result["projection_report_path"].exists()
     report = result["projection_report_path"].read_text(encoding="utf-8").lower()

@@ -1,6 +1,7 @@
 # SofaScore Current Probe
 
 Phase 23 adds a conservative SofaScore current-data probe. It is designed to answer what SofaScore can safely provide, not to pretend the source is complete.
+Phase 24 does not depend on SofaScore because safe live requests returned HTTP 403. The project does not bypass that.
 
 ## What It Probes
 
@@ -66,5 +67,5 @@ outputs/source_probes/sofascore/YYYY-MM-DD/
 - `sofascore_probe_summary.md`: human-readable availability summary.
 - `sofascore_probe_manifest.json`: cache/request/status metadata.
 
-For current international and World Cup workflows, SofaScore fixtures are considered before OpenFootball/TheStatsAPI and before manual fallback. A fixture-only SofaScore row remains low support. Stats can raise support to `high_current_fixture_stats`; stats with xG can raise support to `high_current_fixture_stats_xg`.
+For current international and World Cup workflows, SofaScore is cache/probe-only. The Phase 24 default backbone uses OpenFootball-style static fixtures plus EloRatings-style ratings. A fixture-only SofaScore row remains low support. Stats can raise support only when actual parsed fields exist.
 

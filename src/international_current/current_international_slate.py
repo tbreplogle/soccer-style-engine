@@ -13,7 +13,6 @@ from src.data_sources.adapters.espn_scoreboard_adapter import audit_espn_scorebo
 from src.data_sources.adapters.fbref_adapter import audit_fbref_international
 from src.data_sources.adapters.openfootball_worldcup_adapter import audit_openfootball_worldcup
 from src.data_sources.adapters.sofascore_adapter import audit_sofascore_current_international
-from src.data_sources.adapters.thestatsapi_worldcup_adapter import audit_thestatsapi_worldcup
 from src.data_sources.source_result import SourceResult
 from src.international_current.current_international_schema import (
     CurrentInternationalFixture,
@@ -22,6 +21,8 @@ from src.international_current.current_international_schema import (
     CurrentInternationalSourceSummary,
     CurrentInternationalTeamRating,
 )
+from src.international_current.rating_projection import project_from_fixture_and_ratings
+from src.international_current.team_name_normalization import normalize_team_pair
 from src.models.international_projection import project_international_match
 
 
@@ -34,6 +35,7 @@ SLATE_COLUMNS = [
     "away_team",
     "neutral_site",
     "source_fixture_status",
+    "fixture_source_name",
     "source_fixture_name",
     "rating_source_name",
     "stats_source_name",
@@ -42,6 +44,8 @@ SLATE_COLUMNS = [
     "data_support_level",
     "reliability_status",
     "warnings",
+    "style_inputs_available",
+    "style_inputs_warning",
 ]
 
 
@@ -86,6 +90,7 @@ def parse_manual_current_matchups(path: str | Path) -> list[CurrentInternational
         for index, row in enumerate(csv.DictReader(handle)):
             home = row.get("home_team") or row.get("team_a") or ""
             away = row.get("away_team") or row.get("team_b") or ""
+            home, away, name_warnings = normalize_team_pair(home, away)
             fixtures.append(CurrentInternationalFixture(
                 source_name=row.get("source_name") or "manual_current_fixture",
                 source_match_id=row.get("source_match_id") or f"manual-{index + 1}",
@@ -104,6 +109,7 @@ def parse_manual_current_matchups(path: str | Path) -> list[CurrentInternational
                 reliability_status="manual_fallback",
                 warnings=[
                     "Manual fixture fallback; verify teams, venue, neutral-site status, and kickoff externally.",
+                    *name_warnings,
                     row.get("notes") or "No current stats/xG attached to this manual fixture.",
                 ],
             ))
@@ -122,10 +128,12 @@ def determine_data_support_level(
     if fixture and rating:
         if fixture.source_name == "espn_scoreboard":
             return "medium_current_fixture_scoreboard_rating"
-        if fixture.source_name == "manual_current_fixture":
+        if fixture.source_name == "manual_current_fixture" or fixture.reliability_status == "manual_fallback":
             return "low_manual_fixture_rating"
         return "medium_current_fixture_rating"
     if fixture:
+        if fixture.source_name == "manual_current_fixture" or fixture.reliability_status == "manual_fallback":
+            return "low_manual_fixture_rating"
         return "low_fixture_only"
     if rating:
         return "historical_context_only"
@@ -146,12 +154,20 @@ def _rating_lookup(ratings: list[CurrentInternationalTeamRating]) -> dict[str, C
     return {rating.team: rating for rating in ratings if rating.team}
 
 
+def _rating_for_fixture(
+    fixture: CurrentInternationalFixture,
+    ratings: dict[str, CurrentInternationalTeamRating],
+) -> tuple[CurrentInternationalTeamRating | None, CurrentInternationalTeamRating | None]:
+    return ratings.get(fixture.home_team), ratings.get(fixture.away_team)
+
+
 def _fixture_to_slate_row(
     fixture: CurrentInternationalFixture,
     ratings: dict[str, CurrentInternationalTeamRating],
     stats_lookup: dict[str, CurrentInternationalMatchStats] | None = None,
 ) -> CurrentInternationalSlateRow:
-    rating = ratings.get(fixture.home_team) or ratings.get(fixture.away_team)
+    home_rating, away_rating = _rating_for_fixture(fixture, ratings)
+    rating = home_rating if home_rating and away_rating else home_rating or away_rating
     rating_source = rating.source_name if rating else ""
     stats = (stats_lookup or {}).get(fixture.source_match_id)
     mode = stats.data_mode if stats else _fixture_mode(fixture)
@@ -170,6 +186,7 @@ def _fixture_to_slate_row(
         away_team=fixture.away_team,
         neutral_site=fixture.neutral_site,
         source_fixture_status=fixture.status,
+        fixture_source_name=fixture.source_name,
         source_fixture_name=fixture.source_name,
         rating_source_name=rating_source,
         stats_source_name=stats.source_name if stats else "",
@@ -178,6 +195,8 @@ def _fixture_to_slate_row(
         data_support_level=determine_data_support_level(fixture, rating, stats),
         reliability_status=fixture.reliability_status,
         warnings=" | ".join(warnings),
+        style_inputs_available=False,
+        style_inputs_warning="No current event/xG/tracking/style-aware matchup inputs are available for this slate row.",
     )
 
 
@@ -194,7 +213,7 @@ def _source_summary(results: list[SourceResult], manual_count: int) -> list[Curr
                 "available"
                 if source == "sofascore" and ("xg" in result.fields_available or "match_stats" in result.fields_available)
                 else "not_available_current"
-                if source in {"openfootball_worldcup", "thestatsapi_worldcup", "espn_scoreboard", "eloratings"}
+                if source in {"openfootball_worldcup", "espn_scoreboard", "eloratings"}
                 else "planned_unprobed"
             ),
             world_cup_readiness=result.coverage_status,
@@ -252,22 +271,39 @@ def audit_current_international_sources(
     allow_network: bool = False,
     output_dir: str | Path = "outputs/current_international",
 ) -> dict[str, Any]:
-    sofascore_result, sofascore_fixtures, sofascore_stats = audit_sofascore_current_international(
+    openfootball_result, openfootball_fixtures = audit_openfootball_worldcup(
         allow_network=allow_network,
+        use_sample_fallback=True,
+    )
+    # Phase 24 does not depend on SofaScore after the safe probe returned HTTP 403.
+    # Use cache/local mode only here; do not force live SofaScore access in the default workflow.
+    sofascore_result, sofascore_fixtures, sofascore_stats = audit_sofascore_current_international(
+        allow_network=False,
         as_of_date=as_of_date,
         competition=competition,
     )
-    openfootball_result, openfootball_fixtures = audit_openfootball_worldcup(allow_network=allow_network)
-    thestatsapi_result, thestatsapi_fixtures = audit_thestatsapi_worldcup(allow_network=allow_network)
-    eloratings_result, ratings = audit_eloratings_current(allow_network=allow_network)
+    if allow_network:
+        sofascore_result.warnings.append("SofaScore live probing is intentionally not forced in the Phase 24 default backbone after safe requests returned HTTP 403.")
+    eloratings_result, ratings = audit_eloratings_current(allow_network=allow_network, use_sample_fallback=True)
     espn_result, espn_fixtures = audit_espn_scoreboard(allow_network=allow_network)
     fbref_result = audit_fbref_international(allow_network=allow_network)
     manual_fixtures = parse_manual_current_matchups(manual_matchups) if manual_matchups else []
-    fixtures = [*sofascore_fixtures, *openfootball_fixtures, *thestatsapi_fixtures, *espn_fixtures, *manual_fixtures]
+    fixtures = [*openfootball_fixtures, *sofascore_fixtures, *espn_fixtures, *manual_fixtures]
     if competition:
         fixtures = [fixture for fixture in fixtures if not fixture.competition or competition.lower() in fixture.competition.lower()]
-    results = [sofascore_result, openfootball_result, thestatsapi_result, eloratings_result, espn_result, fbref_result]
+    results = [openfootball_result, eloratings_result, sofascore_result, espn_result, fbref_result]
     summaries = _source_summary(results, len(manual_fixtures))
+    rating_names = {rating.team for rating in ratings if rating.team and rating.rating_value is not None}
+    fixture_teams = sorted({team for fixture in fixtures for team in [fixture.home_team, fixture.away_team] if team})
+    missing_ratings = [team for team in fixture_teams if team not in rating_names]
+    if openfootball_fixtures and ratings and not missing_ratings:
+        readiness = "ready_fixture_and_rating"
+    elif fixtures and fixtures == manual_fixtures:
+        readiness = "manual_only"
+    elif fixtures:
+        readiness = "ready_fixture_only"
+    else:
+        readiness = "insufficient"
     run_dir = _run_dir(output_dir, as_of_date)
     summary_path = _write_source_summary(run_dir / "current_international_source_summary.md", results, summaries, allow_network)
     manifest = {
@@ -277,6 +313,11 @@ def audit_current_international_sources(
         "allow_network": allow_network,
         "fixture_count": len(fixtures),
         "rating_count": len(ratings),
+        "teams_missing_ratings": missing_ratings,
+        "teams_missing_ratings_count": len(missing_ratings),
+        "world_cup_readiness_status": readiness,
+        "style_inputs_available": False,
+        "style_inputs_warning": "No current event/xG/tracking/style-aware matchup inputs are available; do not report style-aware projection ready.",
         "stats_count": len(sofascore_stats),
         "sofascore": {
             "fixture_count": len(sofascore_fixtures),
@@ -289,6 +330,7 @@ def audit_current_international_sources(
         "source_status_counts": _result_frame(results)["status"].value_counts().to_dict(),
         "guardrails": {
             "current_statsbomb_used": False,
+            "the_stats_api_used": False,
             "fixture_only_not_true_style": True,
             "proxy_adjustments_enabled": False,
             "betting_recommendations": False,
@@ -411,18 +453,61 @@ def project_current_international(
         output_dir=output_dir,
     )
     slate = slate_result["slate"].head(max_matches).copy()
-    history = _empty_international_history()
+    ratings = _rating_lookup(slate_result["ratings"])
     rows = []
     for _, matchup in slate.iterrows():
-        projection = project_international_match(
-            history,
-            str(matchup["home_team"]),
-            str(matchup["away_team"]),
-            as_of_date,
+        fixture_matches = [
+            fixture for fixture in slate_result["fixtures"]
+            if fixture.home_team == str(matchup["home_team"])
+            and fixture.away_team == str(matchup["away_team"])
+            and fixture.match_date == str(matchup["match_date"])
+            and fixture.source_name == str(matchup["source_fixture_name"])
+        ]
+        if not fixture_matches:
+            fixture_matches = [
+                fixture for fixture in slate_result["fixtures"]
+                if fixture.home_team == str(matchup["home_team"])
+                and fixture.away_team == str(matchup["away_team"])
+                and fixture.match_date == str(matchup["match_date"])
+                and fixture.reliability_status == str(matchup["reliability_status"])
+            ]
+        fixture = fixture_matches[0] if fixture_matches else CurrentInternationalFixture(
+            source_name=str(matchup["source_fixture_name"]),
+            match_date=str(matchup["match_date"]),
+            competition=str(matchup["competition"]),
+            home_team=str(matchup["home_team"]),
+            away_team=str(matchup["away_team"]),
             neutral_site=str(matchup["neutral_site"]),
-            competition_context=str(matchup["competition"]),
+            reliability_status=str(matchup["reliability_status"]),
         )
-        row = projection.iloc[0].to_dict()
+        home_rating, away_rating = _rating_for_fixture(fixture, ratings)
+        baseline = project_from_fixture_and_ratings(fixture, home_rating, away_rating)
+        row = {
+            "as_of_date": as_of_date,
+            "team_a": baseline["home_team"],
+            "team_b": baseline["away_team"],
+            "neutral_site": matchup["neutral_site"],
+            "competition_context": matchup["competition"],
+            "projection_profile": "current_fixture_rating_baseline",
+            "baseline_mode_used": "fixture_rating_only_baseline",
+            "team_a_xg_base": baseline["projected_home_xg"],
+            "team_b_xg_base": baseline["projected_away_xg"],
+            "team_a_xg_final": baseline["projected_home_xg"],
+            "team_b_xg_final": baseline["projected_away_xg"],
+            "projected_total": baseline["projected_total"],
+            "most_likely_score": baseline["most_likely_score"],
+            "team_a_win_prob": baseline["home_win_probability"],
+            "draw_prob": baseline["draw_probability"],
+            "team_b_win_prob": baseline["away_win_probability"],
+            "confidence_score": baseline["confidence_score"],
+            "confidence_label": baseline["confidence_label"],
+            "risk_flags": "rating_only_baseline | no_current_style_inputs",
+            "international_context_warnings": baseline["warnings"],
+            "data_mode": "fallback_rating_only",
+            "home_rating": baseline["home_rating"],
+            "away_rating": baseline["away_rating"],
+            "rating_diff": baseline["rating_diff"],
+        }
         row.update({
             "match_date": matchup["match_date"],
             "competition": matchup["competition"],
@@ -437,6 +522,9 @@ def project_current_international(
             "scoreboard_source_name": matchup["scoreboard_source_name"],
             "current_source_warnings": matchup["warnings"],
             "phase22_guardrails": "current_statsbomb_used=false | proxy_adjustments_enabled=false | no_betting_recommendations=true",
+            "style_inputs_available": matchup.get("style_inputs_available", False),
+            "style_inputs_warning": matchup.get("style_inputs_warning", "No current style-aware matchup inputs are available."),
+            "rating_only_warning": baseline["warnings"],
         })
         rows.append(row)
     projections = pd.DataFrame(rows)

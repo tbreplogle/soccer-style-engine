@@ -27,9 +27,10 @@ Club projection:
 
 International and World Cup projection:
 
+- OpenFootball/static fixture backbone
 - EloRatings
-- SofaScore
-- FBref
+- SofaScore cache/probe only; safe live requests returned HTTP 403
+- ESPN scoreboard fallback
 - manual fallback
 - StatsBomb Open Data for historical validation only
 
@@ -44,7 +45,7 @@ Style/event proxy work:
 
 - Football-Data: current club results, fixtures, match stats, and odds fields when present. No event/tracking data.
 - SoccerData: optional wrapper ecosystem. Useful only if installed and stable.
-- SofaScore: candidate for current fixtures, scores, stats, xG/xGOT, lineups, player ratings, and World Cup coverage.
+- SofaScore: candidate for current fixtures, scores, stats, xG/xGOT, lineups, player ratings, and World Cup coverage, but safe live probing currently returns HTTP 403 and is not bypassed.
 - WhoScored: candidate for event/action style proxies, but likely fragile.
 - FBref: candidate for team/player aggregate stats.
 - Understat: candidate for club xG and shot-level club data. Not a World Cup solution.
@@ -60,6 +61,7 @@ Style/event proxy work:
 - No fragile scraping in tests.
 - Network probing must be optional and polite.
 - Cache raw/source outputs when live probes are implemented.
+- TheStatsAPI/API-key/signup sources are excluded from the Phase 24 no-signup workflow.
 
 ## Connection To Future Style Work
 
