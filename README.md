@@ -1,6 +1,8 @@
 # Soccer Style Engine
 
-Soccer Style Engine is a local, explainable soccer projection workflow. It tracks how teams play, validates model behavior, writes operational run outputs, and renders those outputs in a lightweight static viewer.
+Version: `0.1.0-free-v1`
+
+Soccer Style Engine is a local, explainable soccer projection workflow. It tracks measurable team behavior, validates model behavior, writes operational run outputs, and renders those outputs in a lightweight static viewer.
 
 The project rule remains:
 
@@ -25,7 +27,7 @@ The project rule remains:
 
 ## Daily Workflow
 
-Run the one-command local workflow:
+Quickest path:
 
 ```powershell
 .\scripts\run_today.ps1
@@ -37,11 +39,33 @@ Or use the friendly CLI wrapper:
 .\.venv\Scripts\python.exe -m src.cli run-today --as-of-date 2026-05-25 --skip-download --max-matches 5
 ```
 
+This writes a dated run under `outputs/runs/`, updates run logs under `outputs/run_logs/`, and builds the static viewer at `outputs/viewer/index.html`.
+
 Open the viewer path printed at the end, or run:
 
 ```powershell
 .\scripts\open_viewer.ps1
 ```
+
+## Local-Only Runs
+
+Use `--skip-download` when you want to run from existing local CSVs only:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli run-today --as-of-date 2026-05-25 --skip-download --max-matches 5
+```
+
+The PowerShell workflow script uses local cached data by default. Use `.\scripts\run_today.ps1 -Download` when a data refresh is intentional.
+
+## International Data
+
+International workflows are available when local international data is supplied:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli run-daily-pipeline --as-of-date 2026-05-25 --include-international --international-input data/processed/international_match_results.csv --skip-download --build-viewer
+```
+
+International projections remain sparse/historical unless current international data is supplied. Club and international ratings stay separate.
 
 ## Tests
 
@@ -58,6 +82,13 @@ Full validation before commit or merge:
 ```
 
 Slow tests are not bad. They are the heavier validation and workflow checks that should be run intentionally.
+
+Final v1 validation:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli validate-v1
+.\scripts\validate_v1.ps1
+```
 
 ## Data Modes
 
@@ -78,3 +109,13 @@ Generated outputs are ignored and should not be committed:
 - raw Football-Data and StatsBomb folders
 
 Commit source, tests, docs, scripts, examples, and sample input fixtures.
+
+## Release Docs
+
+- `docs/V1_RELEASE_NOTES.md`
+- `docs/V1_LIMITATIONS.md`
+- `docs/V1_RUN_CHECKLIST.md`
+
+## Roadmap
+
+After free v1, the natural next work is better calibration, faster full validation, reliable roster/injury inputs if a trustworthy source exists, and eventually style visuals. PassSonar, heat maps, style fingerprints, dashboards, and event visuals are intentionally deferred.

@@ -81,12 +81,12 @@ def run_operational_health_check() -> dict[str, Any]:
         checks.append({"name": f"ignored_{ignored_path}", "passed": ok, "message": message})
         if not ok:
             warnings.append(message)
-    for script in ["scripts/test_quick.ps1", "scripts/test_full.ps1", "scripts/run_today.ps1", "scripts/build_viewer.ps1", "scripts/open_viewer.ps1"]:
+    for script in ["scripts/test_quick.ps1", "scripts/test_full.ps1", "scripts/run_today.ps1", "scripts/build_viewer.ps1", "scripts/open_viewer.ps1", "scripts/validate_v1.ps1"]:
         exists = Path(script).exists()
         checks.append({"name": f"script_{script}", "passed": exists, "message": f"{script} {'exists' if exists else 'is missing'}."})
         if not exists:
             warnings.append(f"Missing workflow script: {script}")
-    for doc in ["README.md", "docs/V1_WORKFLOW.md", "docs/DEVELOPER_COMMANDS.md", "docs/TESTING_STRATEGY.md", "docs/PHASE19_USAGE.md"]:
+    for doc in ["README.md", "docs/V1_WORKFLOW.md", "docs/V1_RELEASE_NOTES.md", "docs/V1_LIMITATIONS.md", "docs/V1_RUN_CHECKLIST.md", "docs/DEVELOPER_COMMANDS.md", "docs/TESTING_STRATEGY.md", "docs/PHASE19_USAGE.md", "docs/PHASE20_USAGE.md"]:
         exists = Path(doc).exists()
         checks.append({"name": f"doc_{doc}", "passed": exists, "message": f"{doc} {'exists' if exists else 'is missing'}."})
         if not exists:
@@ -94,6 +94,7 @@ def run_operational_health_check() -> dict[str, Any]:
     commands = [
         "run-daily-pipeline",
         "run-today",
+        "validate-v1",
         "list-runs",
         "build-report-viewer",
         "open-report-viewer",

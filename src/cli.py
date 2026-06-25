@@ -44,6 +44,7 @@ from src.operational.daily_runner import run_daily_pipeline
 from src.operational.defaults import explain_operational_defaults
 from src.operational.health_check import format_health_check, run_operational_health_check
 from src.operational.season_sanity import check_season_sanity
+from src.operational.v1_validation import format_v1_validation, validate_v1
 from src.reports.real_data_validation import run_real_data_validation
 from src.reports.projection_report import compare_club_projection_profiles, compare_international_projection_profiles
 from src.reports.slate_report import build_club_slate_report, build_international_slate_report
@@ -360,6 +361,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("explain-operational-defaults")
     sub.add_parser("explain-currentness")
     sub.add_parser("operational-health-check")
+    sub.add_parser("validate-v1")
 
     p = sub.add_parser("list-runs")
     p.add_argument("--runs-root", default="outputs/runs")
@@ -755,6 +757,11 @@ def main(argv: list[str] | None = None) -> None:
         print(explain_currentness())
     elif args.command == "operational-health-check":
         print(format_health_check(run_operational_health_check()))
+    elif args.command == "validate-v1":
+        result = validate_v1()
+        print(format_v1_validation(result))
+        if result["v1_status"] == "fail":
+            raise SystemExit(1)
     elif args.command == "list-runs":
         entries = build_run_index(args.runs_root)
         _print_json(entries) if args.json else print(format_run_index_table(entries))
