@@ -62,7 +62,10 @@ def _is_sample_path(path: Path) -> bool:
 
 def _fixture_from_row(row: dict[str, str], source_name: str, source_path: Path) -> CurrentInternationalFixture:
     actual_source = row.get("source_name") or source_name
-    home, away, warnings = normalize_team_pair(row.get("home_team") or row.get("team_a") or "", row.get("away_team") or row.get("team_b") or "")
+    home, away, warnings = normalize_team_pair(
+        row.get("home_team") or row.get("team_a") or row.get("team1") or "",
+        row.get("away_team") or row.get("team_b") or row.get("team2") or "",
+    )
     sample = _is_sample_path(source_path)
     return CurrentInternationalFixture(
         source_name=actual_source,
@@ -92,8 +95,14 @@ def _fixture_from_row(row: dict[str, str], source_name: str, source_path: Path) 
 
 def _parse_fixture_cache(path: Path, source_name: str) -> list[CurrentInternationalFixture]:
     if path.suffix.lower() == ".json":
-        if "openfootball" in source_name:
-            return parse_openfootball_fixtures(path)
+        if "openfootball" in source_name and not _is_sample_path(path):
+            fixtures = parse_openfootball_fixtures(path)
+            if _is_sample_path(path):
+                for fixture in fixtures:
+                    fixture.is_sample_data = True
+                    fixture.source_tier = "sample"
+                    fixture.reliability_status = "sample_only"
+            return fixtures
         payload = json.loads(path.read_text(encoding="utf-8"))
         rows = payload.get("matches", payload if isinstance(payload, list) else [])
         return [_fixture_from_row({key: str(value) for key, value in row.items()}, source_name, path) for row in rows]

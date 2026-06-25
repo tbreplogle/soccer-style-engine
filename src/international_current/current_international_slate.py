@@ -19,6 +19,11 @@ from src.international_current.current_international_schema import (
     CurrentInternationalTeamRating,
 )
 from src.international_current.fixture_harvest import harvest_current_international_fixtures
+from src.international_current.fixture_resolution import (
+    PLACEHOLDER_SKIP_WARNING,
+    classify_fixture,
+    write_fixture_readiness_outputs,
+)
 from src.international_current.rating_harvest import harvest_current_international_ratings
 from src.international_current.rating_projection import project_from_fixture_and_ratings
 from src.international_current.stat_harvest import harvest_current_international_stats
@@ -52,6 +57,13 @@ SLATE_COLUMNS = [
     "data_coverage_score",
     "missing_data_summary",
     "source_audit_status",
+    "fixture_resolution_status",
+    "is_resolved_fixture",
+    "home_team_resolved",
+    "away_team_resolved",
+    "placeholder_reason",
+    "projection_eligible",
+    "projection_skip_reason",
 ]
 
 PROJECTION_COLUMNS = [
@@ -113,6 +125,10 @@ PROJECTION_COLUMNS = [
     "source_warning",
     "style_warning",
     "guardrail_flags",
+    "fixture_resolution_status",
+    "is_resolved_fixture",
+    "projection_eligible",
+    "projection_skip_reason",
 ]
 
 
@@ -264,6 +280,7 @@ def _fixture_to_slate_row(
     fixture: CurrentInternationalFixture,
     ratings: dict[str, CurrentInternationalTeamRating],
     stats_lookup: dict[str, CurrentInternationalMatchStats] | None = None,
+    allow_sample_data: bool = False,
 ) -> CurrentInternationalSlateRow:
     home_rating, away_rating = _rating_for_fixture(fixture, ratings)
     rating = home_rating if home_rating and away_rating else home_rating or away_rating
@@ -281,6 +298,9 @@ def _fixture_to_slate_row(
             "Sample fixture data only. Do not treat this as a real current matchup.",
             *warnings,
         ]))
+    resolution = classify_fixture(fixture, allow_sample_data=allow_sample_data)
+    if not resolution.projection_eligible and resolution.projection_skip_reason:
+        warnings = list(dict.fromkeys([*warnings, resolution.projection_skip_reason]))
     return CurrentInternationalSlateRow(
         match_date=fixture.match_date,
         competition=fixture.competition,
@@ -306,6 +326,13 @@ def _fixture_to_slate_row(
         data_coverage_score=0,
         missing_data_summary="",
         source_audit_status="",
+        fixture_resolution_status=resolution.fixture_resolution_status,
+        is_resolved_fixture=resolution.is_resolved_fixture,
+        home_team_resolved=resolution.home_team_resolved,
+        away_team_resolved=resolution.away_team_resolved,
+        placeholder_reason=resolution.placeholder_reason,
+        projection_eligible=resolution.projection_eligible,
+        projection_skip_reason=resolution.projection_skip_reason,
     )
 
 
@@ -539,7 +566,16 @@ def build_current_international_slate(
     )
     ratings = _rating_lookup(audit["ratings"])
     stats_lookup = {stat.source_match_id: stat for stat in audit["stats"] if stat.source_match_id}
-    rows = [_fixture_to_slate_row(fixture, ratings, stats_lookup).to_dict() for fixture in audit["fixtures"]]
+    readiness = write_fixture_readiness_outputs(
+        run_dir=audit["run_dir"],
+        fixtures=audit["fixtures"],
+        ratings=ratings,
+        allow_sample_data=allow_sample_data,
+    )
+    rows = [
+        _fixture_to_slate_row(fixture, ratings, stats_lookup, allow_sample_data=allow_sample_data).to_dict()
+        for fixture in audit["fixtures"]
+    ]
     frame = pd.DataFrame(rows)
     for column in SLATE_COLUMNS:
         if column not in frame.columns:
@@ -570,13 +606,25 @@ def build_current_international_slate(
     frame.to_csv(slate_path, index=False)
     manifest = dict(audit["manifest"])
     manifest["slate_rows"] = len(frame)
+    manifest.update(readiness["summary"])
     manifest["output_paths"] = {
         **manifest["output_paths"],
         "slate": str(slate_path),
         "manifest": str(run_dir / "current_international_manifest.json"),
+        **readiness["paths"],
     }
+    if readiness["summary"]["skipped_placeholder_rows"]:
+        manifest["warnings"] = list(dict.fromkeys([*manifest.get("warnings", []), PLACEHOLDER_SKIP_WARNING]))
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
-    return {**audit, "slate": frame, "slate_path": slate_path, "manifest_path": manifest_path, "manifest": manifest}
+    return {
+        **audit,
+        "slate": frame,
+        "slate_path": slate_path,
+        "fixture_readiness": readiness["frame"],
+        "fixture_readiness_paths": readiness["paths"],
+        "manifest_path": manifest_path,
+        "manifest": manifest,
+    }
 
 
 def _empty_international_history() -> pd.DataFrame:
@@ -618,10 +666,23 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
         "team_b_win_prob",
         "confidence_label",
         "data_support_level",
+        "fixture_resolution_status",
+        "projection_eligible",
     ]
     lines.extend(_markdown_table(projections[summary_cols] if not projections.empty else projections))
     lines.extend(["", "## Current Slate Inputs", ""])
-    slate_cols = ["match_date", "home_team", "away_team", "source_fixture_name", "data_mode", "data_support_level", "warnings"]
+    slate_cols = [
+        "match_date",
+        "home_team",
+        "away_team",
+        "source_fixture_name",
+        "fixture_resolution_status",
+        "projection_eligible",
+        "projection_skip_reason",
+        "data_mode",
+        "data_support_level",
+        "warnings",
+    ]
     lines.extend(_markdown_table(slate[slate_cols] if not slate.empty else slate))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -643,6 +704,8 @@ def project_current_international(
     source_audit: bool = False,
     strict_real_data: bool = False,
     build_poisson_board: bool = False,
+    include_unresolved_fixtures: bool = False,
+    resolved_only: bool = True,
 ) -> dict[str, Any]:
     slate_result = build_current_international_slate(
         as_of_date=as_of_date,
@@ -656,7 +719,12 @@ def project_current_international(
         refresh_ratings=refresh_ratings,
         refresh_stats=refresh_stats,
     )
-    slate = slate_result["slate"].head(max_matches).copy()
+    full_slate = slate_result["slate"].copy()
+    if "projection_eligible" in full_slate.columns:
+        projection_slate = full_slate[full_slate["projection_eligible"].astype(bool)].copy()
+    else:
+        projection_slate = full_slate.copy()
+    slate = projection_slate.head(max_matches).copy()
     ratings = _rating_lookup(slate_result["ratings"])
     rows = []
     for _, matchup in slate.iterrows():
@@ -759,6 +827,10 @@ def project_current_international(
             "source_warning": matchup["warnings"],
             "style_warning": matchup.get("style_inputs_warning", "No current style-aware matchup inputs are available."),
             "guardrail_flags": "current_statsbomb_used=false | proxy_adjustments_enabled=false | no_betting_recommendations=true",
+            "fixture_resolution_status": matchup.get("fixture_resolution_status", ""),
+            "is_resolved_fixture": matchup.get("is_resolved_fixture", True),
+            "projection_eligible": matchup.get("projection_eligible", True),
+            "projection_skip_reason": matchup.get("projection_skip_reason", ""),
         })
         rows.append(row)
     projections = pd.DataFrame(rows, columns=PROJECTION_COLUMNS)
@@ -773,17 +845,40 @@ def project_current_international(
     manifest = dict(slate_result["manifest"])
     manifest["projection_rows"] = len(projections)
     fallback_neutral_rows = int(((projections.get("rating_status", pd.Series(dtype=str)) == "both_ratings_missing") & (projections.get("team_a_xg_final", pd.Series(dtype=float)) == projections.get("team_b_xg_final", pd.Series(dtype=float)))).sum()) if not projections.empty else 0
-    strict_messages = []
+    resolved_rows = int(full_slate.get("is_resolved_fixture", pd.Series(dtype=bool)).astype(bool).sum()) if not full_slate.empty else 0
+    unresolved_rows = int((full_slate.get("fixture_resolution_status", pd.Series(dtype=str)).astype(str) == "unresolved_placeholder").sum()) if not full_slate.empty else 0
+    skipped_placeholder_rows = unresolved_rows
+    rating_coverage_resolved = (
+        0.0
+        if projections.empty
+        else round(float((projections.get("rating_status", pd.Series(dtype=str)) == "both_ratings_available").mean()), 4)
+    )
+    strict_failure_reasons = []
+    strict_warnings = []
     if strict_real_data:
-        if manifest["real_fixture_count"] == 0:
-            strict_messages.append("strict_real_data: no real fixture source available.")
-        if manifest["teams_missing_ratings_count"]:
-            strict_messages.append("strict_real_data: ratings missing for one or more teams.")
+        if len(slate) == 0:
+            strict_failure_reasons.append("strict_real_data: no resolved projection-eligible fixtures available.")
+        if not projections.empty and (projections.get("rating_status", pd.Series(dtype=str)) != "both_ratings_available").any():
+            strict_failure_reasons.append("strict_real_data: ratings missing for one or more resolved projection-eligible teams.")
         if fallback_neutral_rows:
-            strict_messages.append("strict_real_data: fallback-neutral rows remain.")
+            strict_failure_reasons.append("strict_real_data: fallback-neutral rows remain among resolved projection-eligible fixtures.")
+        if skipped_placeholder_rows:
+            strict_warnings.append(PLACEHOLDER_SKIP_WARNING)
     manifest["strict_real_data"] = strict_real_data
-    manifest["strict_real_data_status"] = "fail" if strict_messages else "pass"
-    manifest["strict_real_data_warnings"] = strict_messages
+    strict_status = "fail" if strict_failure_reasons else "warning" if strict_warnings else "pass"
+    manifest["strict_real_data_status"] = strict_status
+    manifest["strict_real_data_warnings"] = strict_warnings
+    manifest["strict_failure_reasons"] = strict_failure_reasons
+    manifest["resolved_rows"] = resolved_rows
+    manifest["unresolved_rows"] = unresolved_rows
+    manifest["projected_rows"] = len(projections)
+    manifest["skipped_placeholder_rows"] = skipped_placeholder_rows
+    manifest["rating_coverage_resolved"] = rating_coverage_resolved
+    manifest["fallback_neutral_rows_resolved"] = fallback_neutral_rows
+    manifest["include_unresolved_fixtures"] = include_unresolved_fixtures
+    manifest["resolved_only"] = resolved_only
+    if skipped_placeholder_rows:
+        manifest["warnings"] = list(dict.fromkeys([*manifest.get("warnings", []), PLACEHOLDER_SKIP_WARNING]))
     manifest["fallback_neutral_rows"] = fallback_neutral_rows
     manifest["output_paths"] = {
         **manifest["output_paths"],

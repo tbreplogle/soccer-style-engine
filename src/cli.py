@@ -470,6 +470,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh-stats", action="store_true")
     p.add_argument("--strict-real-data", action="store_true")
     p.add_argument("--build-poisson-board", action="store_true")
+    p.add_argument("--include-unresolved-fixtures", action="store_true")
+    p.add_argument("--resolved-only", action="store_true")
 
     p = sub.add_parser("seed-current-international-cache")
     p.add_argument("--as-of-date", required=True)
@@ -1020,6 +1022,8 @@ def main(argv: list[str] | None = None) -> None:
             source_audit=args.source_audit,
             strict_real_data=args.strict_real_data,
             build_poisson_board=args.build_poisson_board,
+            include_unresolved_fixtures=args.include_unresolved_fixtures,
+            resolved_only=(args.resolved_only or not args.include_unresolved_fixtures),
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")

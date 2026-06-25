@@ -146,6 +146,13 @@ class CurrentInternationalSlateRow(_DictMixin):
     data_coverage_score: float = 0.0
     missing_data_summary: str = ""
     source_audit_status: str = ""
+    fixture_resolution_status: str = "resolved"
+    is_resolved_fixture: bool = True
+    home_team_resolved: bool = True
+    away_team_resolved: bool = True
+    placeholder_reason: str = ""
+    projection_eligible: bool = True
+    projection_skip_reason: str = ""
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:

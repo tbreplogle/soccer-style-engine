@@ -374,6 +374,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "poisson" / "poisson_summary.md",
             run_dir / "current_international_source_summary.md",
             run_dir / "current_international_projection_report.md",
+            run_dir / "fixture_readiness" / "fixture_readiness_summary.md",
             run_dir / "source_audit" / "source_audit_summary.md",
             run_dir / "cache_seed" / "cache_seed_summary.md",
         ] if path.exists()
@@ -391,6 +392,8 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         f"<div class=\"metric\"><span>Currentness</span><span class=\"{_status_class(entry.get('currentness_status'))}\">{escape_html(entry.get('currentness_status'))}</span></div>",
         f"<div class=\"metric\"><span>Season sanity</span><span class=\"{_status_class(entry.get('season_sanity_status'))}\">{escape_html(entry.get('season_sanity_status'))}</span></div>",
         f"<div class=\"metric\"><span>Rows</span>{escape_html(entry.get('row_count'))}</div>",
+        f"<div class=\"metric\"><span>Resolved / unresolved</span>{escape_html(entry.get('resolved_rows') or '')} / {escape_html(entry.get('unresolved_rows') or '')}</div>",
+        f"<div class=\"metric\"><span>Projected / skipped placeholders</span>{escape_html(entry.get('projected_rows') or '')} / {escape_html(entry.get('skipped_placeholder_rows') or '')}</div>",
         f"<div class=\"metric\"><span>Warnings</span>{escape_html(entry.get('warnings_count'))}</div>",
         f"<div class=\"metric\"><span>Slate type</span>{escape_html(entry.get('slate_type'))}</div>",
         "</section>",
@@ -410,6 +413,11 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             "Open readable Poisson probability board</a>"
             "</div>"
         )
+    if int(entry.get("skipped_placeholder_rows") or 0) > 0:
+        sections.append(
+            "<div class=\"notice warning\"><strong>Unresolved placeholder fixtures were skipped and not projected.</strong> "
+            "<a href=\"#fixture-readiness\">Open fixture readiness outputs below.</a></div>"
+        )
     for title, filename in [
         ("Club Slate", "club_slate_projections.csv"),
         ("International Slate", "international_slate_projections.csv"),
@@ -423,6 +431,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Rating Coverage", "source_audit/rating_coverage.csv"),
         ("Stat Coverage", "source_audit/stat_coverage.csv"),
         ("Match Data Coverage", "source_audit/match_data_coverage.csv"),
+        ("Resolved Fixtures", "fixture_readiness/resolved_fixtures.csv"),
+        ("Unresolved Fixtures", "fixture_readiness/unresolved_fixtures.csv"),
+        ("Projection Eligible Fixtures", "fixture_readiness/projection_eligible_fixtures.csv"),
+        ("Projection Skipped Fixtures", "fixture_readiness/projection_skipped_fixtures.csv"),
         ("Fixture Seed Results", "cache_seed/fixture_seed_results.csv"),
         ("Rating Seed Results", "cache_seed/rating_seed_results.csv"),
         ("Stat Seed Results", "cache_seed/stat_seed_results.csv"),
@@ -436,7 +448,8 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
     ]:
         path = run_dir / filename
         if path.exists():
-            sections.append(f"<h2>{escape_html(title)}</h2>")
+            heading_id = " id=\"fixture-readiness\"" if title == "Resolved Fixtures" else ""
+            sections.append(f"<h2{heading_id}>{escape_html(title)}</h2>")
             sections.append(csv_to_html_table(path))
     for path in markdown_paths:
         sections.append(f"<section class=\"report\"><h2>{escape_html(path.name)}</h2>")
@@ -462,6 +475,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         "real",
         "manual",
         "sample",
+        "resolved",
+        "unresolved",
+        "skipped placeholders",
         "poisson matches",
         "warnings",
         "slate_type",
@@ -490,6 +506,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         rows.append(f"<td>{escape_html(entry.get('real_rows_reviewed') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('manual_rows_reviewed') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('sample_rows_reviewed') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('resolved_rows') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('unresolved_rows') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('skipped_placeholder_rows') or '')}</td>")
         rows.append(f"<td>{escape_html(poisson_match_count or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('warnings_count'))}</td>")
         rows.append(f"<td>{escape_html(entry.get('slate_type'))}</td>")

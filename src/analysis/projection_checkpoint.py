@@ -211,6 +211,9 @@ def normalize_projection_rows(frame: pd.DataFrame) -> pd.DataFrame:
             "style_warning": _first_value(row, ["style_warning", "style_inputs_warning"], ""),
             "source_warning": _first_value(row, ["source_warning"], ""),
             "guardrail_flags": _first_value(row, ["guardrail_flags", "phase22_guardrails"], ""),
+            "fixture_resolution_status": _first_value(row, ["fixture_resolution_status"], ""),
+            "projection_eligible": _to_bool(_first_value(row, ["projection_eligible"], True)),
+            "projection_skip_reason": _first_value(row, ["projection_skip_reason"], ""),
             "warnings_text": warnings_text,
         })
     return pd.DataFrame(rows)
@@ -494,6 +497,7 @@ def run_projection_checkpoint(
     if run_current_international:
         from src.international_current.current_international_slate import project_current_international
 
+        current_output_dir = Path(output_dir).parent / "current_international"
         current_projection_result = project_current_international(
             as_of_date=run_date,
             manual_matchups=manual_matchups,
@@ -501,6 +505,7 @@ def run_projection_checkpoint(
             allow_sample_data=allow_sample_data,
             max_matches=max_matches,
             cache_dir=cache_dir,
+            output_dir=current_output_dir,
         )
         source_path = Path(current_projection_result["projections_path"])
     elif source_path is None:
@@ -516,6 +521,20 @@ def run_projection_checkpoint(
     rows = analysis["rows"]
     flags = analysis["flags"]
     summary = analysis["summary"]
+    if current_projection_result:
+        current_manifest = current_projection_result.get("manifest", {})
+        skipped_placeholders = int(current_manifest.get("skipped_placeholder_rows") or 0)
+        if skipped_placeholders:
+            extra_flag = pd.DataFrame([{
+                "source_row_index": -1,
+                "team_a": "",
+                "team_b": "",
+                "flag_type": "unresolved_placeholder_fixtures_skipped",
+                "severity": "warning",
+                "message": "Unresolved placeholder fixtures were skipped and not projected.",
+            }])
+            flags = pd.concat([flags, extra_flag], ignore_index=True)
+            summary = _summarize_checkpoint(rows, flags, "warning")
 
     checkpoint_dir = Path(output_dir) / run_date
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
