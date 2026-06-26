@@ -8,17 +8,28 @@ from typing import Any
 
 import pandas as pd
 
+from src.international_current.kickoff_normalization import kickoff_delta_minutes, normalize_kickoff_time
+
 
 DEDUPLICATION_COLUMNS = [
     "fixture_key",
+    "dedupe_match_key",
     "deduplication_status",
     "duplicate_group_id",
     "primary_source",
     "duplicate_sources",
     "dedupe_reason",
     "dedupe_confidence",
+    "dedupe_time_comparison",
+    "dedupe_time_delta_minutes",
+    "dedupe_time_normalization_status",
     "source_priority_score",
     "source_priority_reason",
+    "kickoff_time_raw",
+    "kickoff_time_normalized",
+    "kickoff_datetime_normalized",
+    "kickoff_timezone_status",
+    "kickoff_parse_warning",
 ]
 
 
@@ -53,12 +64,36 @@ def fixture_key(row: pd.Series) -> str:
     return "|".join(parts)
 
 
+def dedupe_match_key(row: pd.Series) -> str:
+    resolved = "resolved" if _truthy(row.get("is_resolved_fixture", True)) else str(row.get("fixture_resolution_status") or "unresolved")
+    parts = [
+        _fixture_date(row),
+        _norm(row.get("competition")),
+        _norm(row.get("home_team")),
+        _norm(row.get("away_team")),
+        _norm(resolved),
+    ]
+    return "|".join(parts)
+
+
 def swapped_fixture_key(row: pd.Series) -> str:
     parts = [
         _fixture_date(row),
         _norm(row.get("competition")),
         _norm(row.get("away_team")),
         _norm(row.get("home_team")),
+    ]
+    return "|".join(parts)
+
+
+def swapped_dedupe_match_key(row: pd.Series) -> str:
+    resolved = "resolved" if _truthy(row.get("is_resolved_fixture", True)) else str(row.get("fixture_resolution_status") or "unresolved")
+    parts = [
+        _fixture_date(row),
+        _norm(row.get("competition")),
+        _norm(row.get("away_team")),
+        _norm(row.get("home_team")),
+        _norm(resolved),
     ]
     return "|".join(parts)
 
@@ -71,9 +106,13 @@ def source_priority_score(row: pd.Series, *, mode: str = "balanced") -> tuple[in
     if _fixture_date(row):
         score += 25
         reasons.append("fixture_date_present")
-    if str(row.get("kickoff_time") or "").strip():
+    kickoff_status = str(row.get("kickoff_timezone_status") or "").strip()
+    if str(row.get("kickoff_time") or row.get("kickoff_time_normalized") or "").strip():
         score += 20
         reasons.append("kickoff_time_present")
+    if kickoff_status == "known_offset":
+        score += 8
+        reasons.append("kickoff_offset_known")
     if _truthy(row.get("is_resolved_fixture", True)):
         score += 20
         reasons.append("resolved_teams")
@@ -130,16 +169,24 @@ def deduplicate_fixtures(
     if annotated.empty:
         return {"deduplicated": annotated.copy(), "annotated": annotated, "duplicates": annotated.copy(), "review": annotated.copy(), "summary": _summary(annotated)}
 
+    kickoff_rows = annotated.apply(lambda row: normalize_kickoff_time(row.get("kickoff_time", ""), row), axis=1)
+    for column in ["kickoff_time_raw", "kickoff_time_normalized", "kickoff_datetime_normalized", "kickoff_timezone_status", "kickoff_parse_warning"]:
+        annotated[column] = [item[column] for item in kickoff_rows]
+
     scores = annotated.apply(lambda row: source_priority_score(row, mode=source_priority_mode), axis=1)
     annotated["source_priority_score"] = [score for score, _ in scores]
     annotated["source_priority_reason"] = [reason for _, reason in scores]
     annotated["fixture_key"] = annotated.apply(fixture_key, axis=1)
+    annotated["dedupe_match_key"] = annotated.apply(dedupe_match_key, axis=1)
     annotated["deduplication_status"] = "unique"
     annotated["duplicate_group_id"] = ""
     annotated["primary_source"] = annotated.apply(_source, axis=1)
     annotated["duplicate_sources"] = ""
     annotated["dedupe_reason"] = "dedupe_disabled" if not enabled else ""
     annotated["dedupe_confidence"] = 0.0
+    annotated["dedupe_time_comparison"] = ""
+    annotated["dedupe_time_delta_minutes"] = pd.NA
+    annotated["dedupe_time_normalization_status"] = annotated["kickoff_timezone_status"]
 
     if not enabled:
         summary = _summary(annotated)
@@ -147,39 +194,50 @@ def deduplicate_fixtures(
 
     keep_indices: set[int] = set(annotated.index)
     group_number = 0
-    for key, group in annotated.groupby("fixture_key", sort=False):
+    for key, group in annotated.groupby("dedupe_match_key", sort=False):
         if not key.strip() or len(group) <= 1:
             continue
         group_number += 1
         group_id = f"dup-{group_number:04d}"
-        ordered = group.sort_values(["source_priority_score", "kickoff_time"], ascending=[False, False])
+        ordered = group.sort_values(["source_priority_score", "kickoff_time_normalized"], ascending=[False, False])
         primary_index = int(ordered.index[0])
         duplicate_indices = [int(index) for index in ordered.index[1:]]
         sources = sorted(set(_source(row) for _, row in group.iterrows() if _source(row)))
+        primary_dt = annotated.at[primary_index, "kickoff_datetime_normalized"]
         annotated.loc[group.index, "duplicate_group_id"] = group_id
         annotated.at[primary_index, "deduplication_status"] = "kept_primary"
         annotated.at[primary_index, "primary_source"] = _source(annotated.loc[primary_index])
         annotated.at[primary_index, "duplicate_sources"] = " | ".join(source for source in sources if source != annotated.at[primary_index, "primary_source"])
-        annotated.at[primary_index, "dedupe_reason"] = "same_date_teams_competition_round_group"
+        annotated.at[primary_index, "dedupe_reason"] = "same_date_teams_competition_resolved_status"
         annotated.at[primary_index, "dedupe_confidence"] = 0.95
+        annotated.at[primary_index, "dedupe_time_comparison"] = "primary"
         for index in duplicate_indices:
+            delta = kickoff_delta_minutes(primary_dt, annotated.at[index, "kickoff_datetime_normalized"])
             keep_indices.discard(index)
             annotated.at[index, "deduplication_status"] = "duplicate_skipped"
             annotated.at[index, "primary_source"] = annotated.at[primary_index, "primary_source"]
             annotated.at[index, "duplicate_sources"] = " | ".join(sources)
-            annotated.at[index, "dedupe_reason"] = "lower_priority_duplicate_same_fixture_key"
+            annotated.at[index, "dedupe_reason"] = "lower_priority_duplicate_same_date_teams_competition"
             annotated.at[index, "dedupe_confidence"] = 0.95
+            annotated.at[index, "dedupe_time_delta_minutes"] = delta if delta is not None else pd.NA
+            annotated.at[index, "dedupe_time_comparison"] = (
+                "within_tolerance"
+                if delta is not None and delta <= 180
+                else "timezone_missing_or_uncomparable"
+                if delta is None
+                else "same_fixture_key_time_differs"
+            )
 
     review_indices: set[int] = set()
-    exact_keys = set(annotated["fixture_key"].astype(str))
+    exact_keys = set(annotated["dedupe_match_key"].astype(str))
     for index, row in annotated.iterrows():
         if index not in keep_indices:
             continue
-        swapped = swapped_fixture_key(row)
-        if swapped not in exact_keys or swapped == row["fixture_key"]:
+        swapped = swapped_dedupe_match_key(row)
+        if swapped not in exact_keys or swapped == row["dedupe_match_key"]:
             continue
         candidates = annotated[
-            (annotated["fixture_key"].astype(str) == swapped)
+            (annotated["dedupe_match_key"].astype(str) == swapped)
             & (annotated.index != index)
             & (annotated.index.isin(keep_indices))
         ]
@@ -246,8 +304,19 @@ def write_fixture_deduplication_outputs(
     summary = dedupe_result["summary"]
     source_priority = annotated[[
         col for col in [
-            "match_date", "kickoff_time", "home_team", "away_team", "source_fixture_name",
-            "fixture_key", "deduplication_status", "source_priority_score", "source_priority_reason",
+            "match_date", "kickoff_time", "kickoff_time_raw", "kickoff_time_normalized",
+            "kickoff_datetime_normalized", "kickoff_timezone_status", "home_team", "away_team",
+            "source_fixture_name", "fixture_key", "dedupe_match_key", "deduplication_status",
+            "source_priority_score", "source_priority_reason", "dedupe_time_comparison",
+        ]
+        if col in annotated.columns
+    ]].copy()
+    consistency = annotated[[
+        col for col in [
+            "match_date", "home_team", "away_team", "source_fixture_name", "fixture_key",
+            "dedupe_match_key", "deduplication_status", "duplicate_group_id", "primary_source",
+            "kickoff_time_raw", "kickoff_time_normalized", "dedupe_time_comparison",
+            "dedupe_time_delta_minutes", "dedupe_reason",
         ]
         if col in annotated.columns
     ]].copy()
@@ -257,11 +326,14 @@ def write_fixture_deduplication_outputs(
         "duplicate_fixtures": output / "duplicate_fixtures.csv",
         "possible_duplicate_review": output / "possible_duplicate_review.csv",
         "source_priority_summary": output / "source_priority_summary.csv",
+        "dedupe_consistency_check": output / "dedupe_consistency_check.csv",
+        "projection_checkpoint_consistency": output / "projection_checkpoint_consistency.md",
     }
     deduplicated.to_csv(paths["deduplicated_fixtures"], index=False)
     duplicates.to_csv(paths["duplicate_fixtures"], index=False)
     review.to_csv(paths["possible_duplicate_review"], index=False)
     source_priority.to_csv(paths["source_priority_summary"], index=False)
+    consistency.to_csv(paths["dedupe_consistency_check"], index=False)
 
     examples = duplicates.head(8).to_dict("records")
     lines = [
@@ -281,6 +353,7 @@ def write_fixture_deduplication_outputs(
         "## Guardrails",
         "",
         "- Duplicate source rows are skipped only when the fixture key matches directly.",
+        "- Kickoff strings are normalized for audit and priority, but exact date/team/competition matches dedupe even when kickoff formats differ.",
         "- Swapped neutral-site candidates are flagged for review, not silently merged.",
         "- No fixtures, kickoff times, or outcomes are invented.",
         "- Current StatsBomb is not used.",
@@ -298,4 +371,13 @@ def write_fixture_deduplication_outputs(
     else:
         lines.append("- none")
     paths["fixture_deduplication_summary"].write_text("\n".join(lines), encoding="utf-8")
+    paths["projection_checkpoint_consistency"].write_text(
+        "\n".join([
+            "# Projection Checkpoint Consistency",
+            "",
+            "Checkpoint consistency has not been run for this direct slate build yet.",
+            "Run `projection-results-checkpoint --run-current-international` to compare direct projection rows with checkpoint rows.",
+        ]),
+        encoding="utf-8",
+    )
     return {key: str(value) for key, value in paths.items()}

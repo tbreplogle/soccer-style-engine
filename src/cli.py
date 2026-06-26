@@ -32,6 +32,7 @@ from src.international_current.current_international_slate import (
     build_current_international_slate,
     project_current_international,
 )
+from src.international_current.historical_seed import seed_international_historical_calibration_data
 from src.international_current.sources import seed_current_international_cache
 from src.international_current.worldcup_fixture_backbone import build_worldcup_backbone
 from src.models.backtest import run_backtest
@@ -545,6 +546,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-diagnostic-leakage", action="store_true")
     p.add_argument("--output-dir", default="outputs/calibration")
     p.add_argument("--max-rows", type=int)
+
+    p = sub.add_parser("seed-international-historical-calibration-data")
+    p.add_argument("--start-date", required=True)
+    p.add_argument("--end-date", required=True)
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--ratings", action="store_true")
+    p.add_argument("--results", action="store_true")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--force-refresh", action="store_true")
+    p.add_argument("--max-snapshots", type=int)
+    p.add_argument("--max-matches", type=int)
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--output-dir", default="outputs/calibration")
 
     return parser
 
@@ -1156,6 +1170,27 @@ def main(argv: list[str] | None = None) -> None:
             max_rows=args.max_rows,
         )
         print(format_calibration_terminal(result))
+    elif args.command == "seed-international-historical-calibration-data":
+        result = seed_international_historical_calibration_data(
+            start_date=args.start_date,
+            end_date=args.end_date,
+            allow_network=args.allow_network,
+            seed_ratings=args.ratings,
+            seed_results=args.results,
+            seed_all=args.all,
+            force_refresh=args.force_refresh,
+            max_snapshots=args.max_snapshots,
+            max_matches=args.max_matches,
+            cache_dir=args.cache_dir,
+            output_dir=args.output_dir,
+        )
+        manifest = result["manifest"]
+        print(f"Historical seed summary: {result['paths']['summary']}")
+        print(f"Rating snapshot rows: {manifest['historical_rating_snapshot_rows']}")
+        print(f"Historical result rows: {manifest['historical_results_rows']}")
+        print(f"Matches with both ratings: {manifest['historical_matches_with_ratings_rows']}")
+        print(f"Rating source statuses: {manifest['rating_source_status_counts']}")
+        print(f"Result source statuses: {manifest['result_source_status_counts']}")
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

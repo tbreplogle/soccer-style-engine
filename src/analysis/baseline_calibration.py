@@ -9,11 +9,17 @@ import numpy as np
 import pandas as pd
 
 from src.models.score_projection import _projection_from_xg
+from src.international_current.current_international_schema import CurrentInternationalFixture, CurrentInternationalTeamRating
+from src.international_current.historical_rating_matcher import attach_historical_ratings
+from src.international_current.historical_rating_snapshots import load_historical_rating_snapshots
+from src.international_current.historical_results import load_historical_results
+from src.international_current.rating_projection import project_from_fixture_and_ratings
 
 
 CALIBRATION_STATUSES = {
     "valid_calibration",
     "diagnostic_only",
+    "diagnostic_only_current_rating_leakage",
     "blocked_missing_historical_ratings",
     "blocked_missing_results",
     "blocked_insufficient_rows",
@@ -258,6 +264,68 @@ def _blocked_result(status: str, *, as_of_date: str, data_source: str, min_rows:
     return _write_outputs(result, as_of_date=as_of_date, data_source=data_source, output_dir=output_dir, limitations=[reason])
 
 
+def _international_historical_projection_rows(
+    *,
+    cache_dir: str | Path = "data/source_cache/current_international",
+    max_rows: int | None = None,
+    max_snapshot_age_days: int = 365,
+) -> tuple[pd.DataFrame, str, str]:
+    snapshots = load_historical_rating_snapshots(cache_dir)
+    if snapshots.empty:
+        return pd.DataFrame(), "blocked_missing_historical_ratings", "Historical international rating snapshots are not available, so leakage-safe current rating baseline calibration is blocked."
+    results = load_historical_results(cache_dir)
+    if results.empty:
+        return pd.DataFrame(), "blocked_missing_results", "No historical international match results were found in the parsed/local cache."
+    matched = attach_historical_ratings(results, snapshots, max_snapshot_age_days=max_snapshot_age_days)
+    matched = matched[matched["rating_match_status"].eq("both_ratings_matched")].copy()
+    if max_rows:
+        matched = matched.head(max_rows)
+    rows: list[dict[str, Any]] = []
+    for _, match in matched.iterrows():
+        fixture = CurrentInternationalFixture(
+            source_name="historical_international_result",
+            match_date=str(match["match_date"]),
+            competition=str(match.get("competition", "")),
+            home_team=str(match["home_team"]),
+            away_team=str(match["away_team"]),
+            neutral_site=str(match.get("neutral_site", "true")),
+            reliability_status="historical_result_with_snapshot",
+        )
+        home_rating = CurrentInternationalTeamRating(
+            source_name="historical_rating_snapshot",
+            team=str(match["home_team"]),
+            rating_value=float(match["home_rating"]),
+            rating_date=str(match["home_rating_snapshot_date"]),
+        )
+        away_rating = CurrentInternationalTeamRating(
+            source_name="historical_rating_snapshot",
+            team=str(match["away_team"]),
+            rating_value=float(match["away_rating"]),
+            rating_date=str(match["away_rating_snapshot_date"]),
+        )
+        baseline = project_from_fixture_and_ratings(fixture, home_rating, away_rating)
+        probs = _projection_from_xg(float(baseline["projected_home_xg"]), float(baseline["projected_away_xg"]))
+        rows.append({
+            "date": match["match_date"],
+            "home_team": match["home_team"],
+            "away_team": match["away_team"],
+            "home_goals": float(match["home_goals"]),
+            "away_goals": float(match["away_goals"]),
+            "home_rating": float(match["home_rating"]),
+            "away_rating": float(match["away_rating"]),
+            "home_rating_snapshot_date": match["home_rating_snapshot_date"],
+            "away_rating_snapshot_date": match["away_rating_snapshot_date"],
+            "home_xg": baseline["projected_home_xg"],
+            "away_xg": baseline["projected_away_xg"],
+            "home_win_prob": baseline["home_win_probability"],
+            "draw_prob": baseline["draw_probability"],
+            "away_win_prob": baseline["away_win_probability"],
+            "over_2_5_prob": probs["over_2_5_prob"],
+            "most_likely_score": baseline["most_likely_score"],
+        })
+    return pd.DataFrame(rows), "valid_calibration", ""
+
+
 def _load_club_historical(max_rows: int | None = None) -> pd.DataFrame:
     for path in [
         Path("data/processed/multi_season_match_results.csv"),
@@ -324,14 +392,26 @@ def calibrate_baseline_projections(
 ) -> dict[str, Any]:
     run_date = as_of_date or date.today().isoformat()
     if data_source == "international_historical" and not allow_diagnostic_leakage:
-        return _blocked_result(
-            "blocked_missing_historical_ratings",
-            as_of_date=run_date,
-            data_source=data_source,
-            min_rows=min_rows,
-            output_dir=output_dir,
-            reason="Historical international rating snapshots are not available, so leakage-safe current rating baseline calibration is blocked.",
-        )
+        projected, status, reason = _international_historical_projection_rows(max_rows=max_rows)
+        if status != "valid_calibration":
+            return _blocked_result(status, as_of_date=run_date, data_source=data_source, min_rows=min_rows, output_dir=output_dir, reason=reason)
+        if len(projected) < min_rows:
+            return _blocked_result(
+                "blocked_insufficient_rows",
+                as_of_date=run_date,
+                data_source=data_source,
+                min_rows=min_rows,
+                output_dir=output_dir,
+                reason=f"Only {len(projected)} leakage-safe historical international rows with matched snapshots were available; min_rows={min_rows}.",
+            )
+        result = evaluate_projection_calibration(projected, status="valid_calibration", data_source=data_source)
+        result["metrics"]["as_of_date"] = run_date
+        result["metrics"]["min_rows"] = min_rows
+        limitations = [
+            "International calibration uses only match rows with historical rating snapshots on or before match date.",
+            "No style-aware xG inputs are included yet; this measures the rating-only baseline.",
+        ]
+        return _write_outputs(result, as_of_date=run_date, data_source=data_source, output_dir=output_dir, limitations=limitations)
     if data_source == "current_international_results":
         return _blocked_result(
             "blocked_missing_results",
@@ -361,7 +441,9 @@ def calibrate_baseline_projections(
             output_dir=output_dir,
             reason=f"Only {len(projected)} eligible historical rows were available; min_rows={min_rows}.",
         )
-    status = "diagnostic_only" if allow_diagnostic_leakage or data_source == "international_historical" else "valid_calibration"
+    status = "diagnostic_only_current_rating_leakage" if allow_diagnostic_leakage and data_source == "international_historical" else "valid_calibration"
+    if data_source == "club_historical":
+        status = "valid_calibration"
     result = evaluate_projection_calibration(projected.head(max_rows) if max_rows else projected, status=status, data_source=data_source)
     result["metrics"]["as_of_date"] = run_date
     result["metrics"]["min_rows"] = min_rows
@@ -403,8 +485,24 @@ def _write_outputs(result: dict[str, Any], *, as_of_date: str, data_source: str,
             "proxy_adjustments_enabled": False,
             "betting_recommendations": False,
         },
+        "style_readiness": {
+            "baseline_can_support": "Rating/result calibration can establish a measurable baseline for future style layers.",
+            "missing_for_style": [
+                "shots for/against",
+                "xG for/against",
+                "open phase/set piece xG",
+                "possession/field tilt proxies",
+                "directness/transition proxy",
+                "cards/discipline",
+                "absences/injuries manual input",
+            ],
+            "baseline_stability_note": "Layer style adjustments only after calibration remains stable on leakage-safe rows.",
+        },
         "output_paths": {key: str(path) for key, path in paths.items()},
     }
+    tuning = write_baseline_tuning_diagnostics(result.get("rows", pd.DataFrame()), as_of_date=as_of_date, output_dir=output_dir)
+    manifest["baseline_tuning"] = tuning["manifest"]
+    manifest["output_paths"].update(tuning["paths"])
     paths["manifest"].write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
     paths["summary"].write_text(_summary_markdown(manifest, result), encoding="utf-8")
     return {**result, "manifest": manifest, "paths": {key: str(path) for key, path in paths.items()}, "run_dir": output}
@@ -437,6 +535,13 @@ def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
         lines.append("- No extra limitations beyond normal baseline validation caveats.")
     lines.extend([
         "",
+        "## Style Readiness",
+        "",
+        f"- Baseline can support now: {manifest['style_readiness']['baseline_can_support']}",
+        f"- Baseline stability note: {manifest['style_readiness']['baseline_stability_note']}",
+        "- Most valuable missing style inputs:",
+        *[f"  - {item}" for item in manifest["style_readiness"]["missing_for_style"]],
+        "",
         "## Guardrails",
         "",
         "- Current StatsBomb is not used as live data.",
@@ -450,6 +555,76 @@ def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
     if not result["totals_calibration"].empty:
         lines.extend(["## O/U 2.5 Calibration", "", _markdown_table(result["totals_calibration"].head(20)), ""])
     return "\n".join(lines)
+
+
+def write_baseline_tuning_diagnostics(rows: pd.DataFrame, *, as_of_date: str, output_dir: str | Path = "outputs/calibration") -> dict[str, Any]:
+    output = Path(output_dir) / as_of_date / "baseline_tuning"
+    output.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "baseline_tuning_summary": output / "baseline_tuning_summary.md",
+        "baseline_tuning_grid": output / "baseline_tuning_grid.csv",
+        "baseline_tuning_best_candidates": output / "baseline_tuning_best_candidates.csv",
+    }
+    if rows.empty or not {"home_rating", "away_rating", "home_goals", "away_goals"}.issubset(rows.columns):
+        grid = pd.DataFrame(columns=["diagnostic_status", "reason"])
+        grid.loc[0] = ["blocked_insufficient_rows", "Rating-backed historical rows are required for tuning diagnostics."]
+        best = grid.copy()
+        status = "blocked_insufficient_rows"
+    else:
+        grid_rows: list[dict[str, Any]] = []
+        for base_total in [2.15, 2.35, 2.55]:
+            for scale in [700, 900, 1100]:
+                projected = []
+                for _, row in rows.iterrows():
+                    diff = max(-350.0, min(350.0, float(row["home_rating"]) - float(row["away_rating"])))
+                    total = max(1.6, min(3.2, base_total + abs(diff) / scale * 0.18))
+                    home_share = 0.5 + max(-0.18, min(0.18, diff / scale))
+                    home_xg = round(max(0.35, total * home_share), 3)
+                    away_xg = round(max(0.35, total * (1 - home_share)), 3)
+                    probs = _projection_from_xg(home_xg, away_xg)
+                    projected.append({
+                        "home_goals": row["home_goals"],
+                        "away_goals": row["away_goals"],
+                        "home_xg": home_xg,
+                        "away_xg": away_xg,
+                        "home_win_prob": probs["home_win_prob"],
+                        "draw_prob": probs["draw_prob"],
+                        "away_win_prob": probs["away_win_prob"],
+                        "over_2_5_prob": probs["over_2_5_prob"],
+                        "most_likely_score": probs["most_likely_score"],
+                    })
+                eval_result = evaluate_projection_calibration(pd.DataFrame(projected), data_source="baseline_tuning_diagnostic")
+                metrics = eval_result["metrics"]
+                grid_rows.append({
+                    "diagnostic_status": "diagnostic_only",
+                    "rating_diff_to_goal_scale": scale,
+                    "baseline_total_goals": base_total,
+                    "rows": metrics["row_count"],
+                    "wdl_log_loss": metrics["wdl_log_loss"],
+                    "brier_score": metrics["brier_score"],
+                    "total_goals_mae": metrics["total_goals_mae"],
+                    "over_under_2_5_brier_score": metrics["over_under_2_5_brier_score"],
+                    "most_likely_score_hit_rate": metrics["most_likely_score_hit_rate"],
+                })
+        grid = pd.DataFrame(grid_rows)
+        best = grid.sort_values(["wdl_log_loss", "brier_score", "total_goals_mae"]).head(5)
+        status = "diagnostic_only"
+    grid.to_csv(paths["baseline_tuning_grid"], index=False)
+    best.to_csv(paths["baseline_tuning_best_candidates"], index=False)
+    paths["baseline_tuning_summary"].write_text(
+        "\n".join([
+            "# Baseline Tuning Diagnostics",
+            "",
+            f"- Status: `{status}`",
+            "- Diagnostic only; production defaults are not changed automatically.",
+            "- Avoid overfitting. Treat candidates as review evidence, not tuned settings.",
+        ]),
+        encoding="utf-8",
+    )
+    return {
+        "manifest": {"status": status, "diagnostic_only": True, "rows": int(len(rows))},
+        "paths": {key: str(path) for key, path in paths.items()},
+    }
 
 
 def _markdown_table(frame: pd.DataFrame) -> str:

@@ -55,3 +55,10 @@ Phase 26 does not add style-aware xG adjustment. It makes the existing checkpoin
 The board page reads generated checkpoint CSV/Markdown files and shows projected team xG, probability output, model-implied American odds, totals, BTTS, clean sheets, correct scores, and source/support warnings. It keeps style inputs marked unavailable when the row is rating-only or fixture-only.
 
 This prepares the review surface for future style-aware xG work: first make projected xG and probability outputs understandable, then test whether measured style inputs improve those xG inputs.
+## Phase 32 Baseline Calibration Note
+
+The current international board remains a rating-based baseline. Fixture deduplication and historical rating snapshot matching make the baseline cleaner and more measurable, but they do not create style-aware xG.
+
+Style adjustments should be layered only after the baseline has enough leakage-safe calibration evidence. The highest-value missing inputs are shots for/against, xG for/against, open-play and set-piece xG, possession or field-tilt proxies, directness/transition proxies, discipline, and verified absence/injury context.
+
+Current StatsBomb is not used as live data, proxy adjustments remain disabled by default, and generated probability outputs are not betting recommendations.

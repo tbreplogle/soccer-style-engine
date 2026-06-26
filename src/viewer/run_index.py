@@ -58,6 +58,8 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "fixture_deduplication/duplicate_fixtures.csv",
     "fixture_deduplication/possible_duplicate_review.csv",
     "fixture_deduplication/source_priority_summary.csv",
+    "fixture_deduplication/dedupe_consistency_check.csv",
+    "fixture_deduplication/projection_checkpoint_consistency.md",
     "cache_seed/cache_seed_summary.md",
     "cache_seed/fixture_seed_results.csv",
     "cache_seed/rating_seed_results.csv",
@@ -76,6 +78,17 @@ CALIBRATION_OUTPUT_NAMES = (
     "totals_calibration.csv",
     "probability_buckets.csv",
     "scoreline_calibration.csv",
+    "baseline_tuning/baseline_tuning_summary.md",
+    "baseline_tuning/baseline_tuning_grid.csv",
+    "baseline_tuning/baseline_tuning_best_candidates.csv",
+)
+
+HISTORICAL_SEED_OUTPUT_NAMES = (
+    "historical_seed_summary.md",
+    "historical_rating_snapshots.csv",
+    "historical_results.csv",
+    "historical_matches_with_ratings.csv",
+    "historical_seed_manifest.json",
 )
 
 
@@ -267,7 +280,7 @@ def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
         return entry
     metrics = manifest.get("metrics") or {}
     warnings = []
-    if str(manifest.get("calibration_status", "")).startswith("blocked") or manifest.get("calibration_status") == "diagnostic_only":
+    if str(manifest.get("calibration_status", "")).startswith("blocked") or str(manifest.get("calibration_status", "")).startswith("diagnostic"):
         warnings.append(f"Calibration status is {manifest.get('calibration_status')}")
     present = [name for name in CALIBRATION_OUTPUT_NAMES if (run_dir / name).exists()]
     return {
@@ -292,6 +305,42 @@ def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
         "manifest_path": str(manifest_path),
         "summary_path": str(run_dir / "baseline_calibration_summary.md") if (run_dir / "baseline_calibration_summary.md").exists() else "",
         "run_dir": str(run_dir),
+        "error": "",
+    }
+
+
+def _historical_seed_entry(seed_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(seed_dir, "malformed_historical_seed_manifest")
+        entry["entry_type"] = "historical_calibration_seed"
+        entry["status"] = "malformed_historical_seed_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+    present = [name for name in HISTORICAL_SEED_OUTPUT_NAMES if (seed_dir / name).exists()]
+    matched = int(manifest.get("historical_matches_with_ratings_rows") or 0)
+    status = "ready" if matched else "blocked_missing_matched_historical_rows"
+    return {
+        "entry_type": "historical_calibration_seed",
+        "run_date": str(manifest.get("run_date") or seed_dir.parent.name),
+        "run_id": str(manifest.get("run_id") or f"historical_seed_{seed_dir.parent.name}"),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": status,
+        "currentness_status": "historical_seed",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": matched,
+        "historical_rating_snapshot_rows": int(manifest.get("historical_rating_snapshot_rows") or 0),
+        "historical_results_rows": int(manifest.get("historical_results_rows") or 0),
+        "historical_matches_with_ratings_rows": matched,
+        "warnings_count": 0 if matched else 1,
+        "warnings": [] if matched else ["Historical seed did not produce matched result/rating rows."],
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(seed_dir / "historical_seed_summary.md") if (seed_dir / "historical_seed_summary.md").exists() else "",
+        "run_dir": str(seed_dir),
         "error": "",
     }
 
@@ -340,6 +389,9 @@ def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
         manifest_path = run_dir / "calibration_manifest.json"
         if manifest_path.exists():
             entries.append(_calibration_entry(run_dir, manifest_path))
+        seed_manifest = run_dir / "historical_seed" / "historical_seed_manifest.json"
+        if seed_manifest.exists():
+            entries.append(_historical_seed_entry(run_dir / "historical_seed", seed_manifest))
     return entries
 
 

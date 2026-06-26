@@ -164,14 +164,23 @@ class CurrentInternationalSlateRow(_DictMixin):
     slate_window: str = ""
     selected_by_slate_filter: bool = False
     fixture_key: str = ""
+    dedupe_match_key: str = ""
     deduplication_status: str = "unique"
     duplicate_group_id: str = ""
     primary_source: str = ""
     duplicate_sources: str = ""
     dedupe_reason: str = ""
     dedupe_confidence: float = 0.0
+    dedupe_time_comparison: str = ""
+    dedupe_time_delta_minutes: float = 0.0
+    dedupe_time_normalization_status: str = ""
     source_priority_score: float = 0.0
     source_priority_reason: str = ""
+    kickoff_time_raw: str = ""
+    kickoff_time_normalized: str = ""
+    kickoff_datetime_normalized: str = ""
+    kickoff_timezone_status: str = ""
+    kickoff_parse_warning: str = ""
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:
