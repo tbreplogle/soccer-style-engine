@@ -495,6 +495,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
     p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
     p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
+    p.add_argument("--candidate-config")
 
     p = sub.add_parser("seed-current-international-cache")
     p.add_argument("--as-of-date", required=True)
@@ -546,6 +547,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-diagnostic-leakage", action="store_true")
     p.add_argument("--output-dir", default="outputs/calibration")
     p.add_argument("--max-rows", type=int)
+    p.add_argument("--cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--run-tuning", action="store_true")
+    p.add_argument("--tuning-profile", choices=["small", "medium", "wide"], default="small")
+    p.add_argument("--primary-metric", choices=["wdl_log_loss", "brier", "total_goals_mae", "over_2_5_brier", "composite"], default="composite")
+    p.add_argument("--save-tuning-candidates", action="store_true")
+    p.add_argument("--apply-tuning", action="store_true")
+    p.add_argument("--holdout-season")
+    p.add_argument("--holdout-start-date")
+    p.add_argument("--holdout-end-date")
+    p.add_argument("--train-start-date")
+    p.add_argument("--train-end-date")
 
     p = sub.add_parser("seed-international-historical-calibration-data")
     p.add_argument("--start-date", required=True)
@@ -1095,6 +1107,7 @@ def main(argv: list[str] | None = None) -> None:
             dedupe_fixtures=args.dedupe_fixtures,
             dedupe_review_threshold=args.dedupe_review_threshold,
             source_priority_mode=args.source_priority_mode,
+            candidate_config=args.candidate_config,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -1168,6 +1181,17 @@ def main(argv: list[str] | None = None) -> None:
             allow_diagnostic_leakage=args.allow_diagnostic_leakage,
             output_dir=args.output_dir,
             max_rows=args.max_rows,
+            cache_dir=args.cache_dir,
+            run_tuning=args.run_tuning,
+            tuning_profile=args.tuning_profile,
+            primary_metric=args.primary_metric,
+            save_tuning_candidates=args.save_tuning_candidates,
+            apply_tuning=args.apply_tuning,
+            holdout_season=args.holdout_season,
+            holdout_start_date=args.holdout_start_date,
+            holdout_end_date=args.holdout_end_date,
+            train_start_date=args.train_start_date,
+            train_end_date=args.train_end_date,
         )
         print(format_calibration_terminal(result))
     elif args.command == "seed-international-historical-calibration-data":

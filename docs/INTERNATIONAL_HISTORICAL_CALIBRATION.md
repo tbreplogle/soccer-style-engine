@@ -32,9 +32,36 @@ If historical snapshots or results are missing, the command writes a blocked cal
 ## Outputs
 
 Historical seed outputs are written under `outputs/calibration/YYYY-MM-DD/historical_seed/`.
-Calibration outputs are written under `outputs/calibration/YYYY-MM-DD/`.
+Calibration outputs are written under immutable run folders:
+
+```text
+outputs/calibration/YYYY-MM-DD/<data_source>/<run_id>/
+```
+
+Each run folder preserves:
+
+- `baseline_calibration_summary.md`
+- `wdl_calibration.csv`
+- `totals_calibration.csv`
+- `probability_buckets.csv`
+- `scoreline_calibration.csv`
+- `calibration_manifest.json`
+
+The manifest includes `calibration_run_id`, `calibration_data_source`, `calibration_output_dir`, `calibration_created_at`, and `calibration_config_hash`.
+
+The date folder also writes:
+
+- `latest_manifest.json`
+- `<data_source>/latest_manifest.json`
+- `calibration_run_index.csv`
+
+These files let review tools find the latest run without overwriting older calibration evidence.
 
 Generated outputs are ignored by git. Commit source, tests, docs, and placeholders only.
+
+## Diagnostic Tuning
+
+Optional baseline tuning is documented in `docs/BASELINE_TUNING.md`. It is diagnostic-only and writes candidate configs only when requested. It does not alter production defaults or claim style-aware improvement.
 
 ## Style Readiness
 

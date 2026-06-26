@@ -69,6 +69,8 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "cache_seed/parsed_fixture_rows.csv",
     "cache_seed/parsed_rating_rows.csv",
     "cache_seed/parsed_stat_rows.csv",
+    "candidate_preview/candidate_projection_comparison.csv",
+    "candidate_preview/candidate_projection_comparison_summary.md",
 )
 
 CALIBRATION_OUTPUT_NAMES = (
@@ -81,6 +83,11 @@ CALIBRATION_OUTPUT_NAMES = (
     "baseline_tuning/baseline_tuning_summary.md",
     "baseline_tuning/baseline_tuning_grid.csv",
     "baseline_tuning/baseline_tuning_best_candidates.csv",
+    "baseline_tuning/baseline_tuning_manifest.json",
+    "baseline_tuning/candidate_model_config.json",
+    "baseline_tuning/train_metrics.csv",
+    "baseline_tuning/holdout_metrics.csv",
+    "baseline_tuning/tuning_holdout_summary.md",
 )
 
 HISTORICAL_SEED_OUTPUT_NAMES = (
@@ -279,6 +286,7 @@ def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
         entry["error"] = str(exc)
         return entry
     metrics = manifest.get("metrics") or {}
+    tuning = manifest.get("baseline_tuning") or {}
     warnings = []
     if str(manifest.get("calibration_status", "")).startswith("blocked") or str(manifest.get("calibration_status", "")).startswith("diagnostic"):
         warnings.append(f"Calibration status is {manifest.get('calibration_status')}")
@@ -286,7 +294,7 @@ def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     return {
         "entry_type": "baseline_calibration",
         "run_date": str(manifest.get("run_date") or run_dir.name),
-        "run_id": str(manifest.get("run_id") or f"baseline_calibration_{run_dir.name}"),
+        "run_id": str(manifest.get("calibration_run_id") or manifest.get("run_id") or f"baseline_calibration_{run_dir.name}"),
         "generated_at": str(manifest.get("generated_at") or ""),
         "status": str(manifest.get("calibration_status") or "unknown"),
         "currentness_status": "calibration",
@@ -294,7 +302,11 @@ def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
         "leagues": [],
         "row_count": int(metrics.get("row_count") or 0),
         "calibration_status": str(manifest.get("calibration_status") or ""),
-        "calibration_data_source": str(manifest.get("data_source") or ""),
+        "calibration_data_source": str(manifest.get("calibration_data_source") or manifest.get("data_source") or ""),
+        "calibration_output_dir": str(manifest.get("calibration_output_dir") or run_dir),
+        "calibration_config_hash": str(manifest.get("calibration_config_hash") or ""),
+        "tuning_status": str(tuning.get("status") or "not_requested"),
+        "tuning_recommendation": str(tuning.get("best_recommendation") or ""),
         "wdl_log_loss": metrics.get("wdl_log_loss"),
         "brier_score": metrics.get("brier_score"),
         "ou25_brier_score": metrics.get("over_under_2_5_brier_score"),
@@ -385,10 +397,9 @@ def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     if not root.exists() or not root.is_dir():
         return entries
+    for manifest_path in sorted(root.rglob("calibration_manifest.json"), key=lambda p: str(p), reverse=True):
+        entries.append(_calibration_entry(manifest_path.parent, manifest_path))
     for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
-        manifest_path = run_dir / "calibration_manifest.json"
-        if manifest_path.exists():
-            entries.append(_calibration_entry(run_dir, manifest_path))
         seed_manifest = run_dir / "historical_seed" / "historical_seed_manifest.json"
         if seed_manifest.exists():
             entries.append(_historical_seed_entry(run_dir / "historical_seed", seed_manifest))

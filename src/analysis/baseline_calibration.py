@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.analysis.baseline_tuning import (
+    default_rating_baseline_parameters,
+    project_rows_with_candidate,
+    write_baseline_tuning_outputs,
+)
 from src.models.score_projection import _projection_from_xg
 from src.international_current.current_international_schema import CurrentInternationalFixture, CurrentInternationalTeamRating
 from src.international_current.historical_rating_matcher import attach_historical_ratings
@@ -28,6 +34,54 @@ CALIBRATION_STATUSES = {
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _run_id(data_source: str, created_at: str) -> str:
+    timestamp = created_at[:19].replace("-", "").replace("T", "_").replace(":", "")
+    suffix = hashlib.sha1(created_at.encode("utf-8")).hexdigest()[:8]
+    return f"cal_{data_source}_{timestamp}_{suffix}"
+
+
+def _config_hash(config: dict[str, Any]) -> str:
+    payload = json.dumps(config, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _calibration_run_context(
+    *,
+    as_of_date: str,
+    data_source: str,
+    output_dir: str | Path,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    created_at = _now_iso()
+    run_id = _run_id(data_source, created_at)
+    config_hash = _config_hash(config)
+    run_dir = Path(output_dir) / as_of_date / data_source / run_id
+    return {
+        "created_at": created_at,
+        "run_id": run_id,
+        "config_hash": config_hash,
+        "run_dir": run_dir,
+        "date_dir": Path(output_dir) / as_of_date,
+        "source_dir": Path(output_dir) / as_of_date / data_source,
+    }
+
+
+def _latest_manifest_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "calibration_run_id": manifest.get("calibration_run_id"),
+        "run_id": manifest.get("run_id"),
+        "run_date": manifest.get("run_date"),
+        "generated_at": manifest.get("generated_at"),
+        "calibration_created_at": manifest.get("calibration_created_at"),
+        "calibration_data_source": manifest.get("calibration_data_source"),
+        "calibration_output_dir": manifest.get("calibration_output_dir"),
+        "calibration_status": manifest.get("calibration_status"),
+        "metrics": manifest.get("metrics") or {},
+        "recommendations": manifest.get("recommendations") or [],
+        "manifest_path": manifest.get("output_paths", {}).get("manifest"),
+    }
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -254,14 +308,50 @@ def calibration_recommendations(metrics: dict[str, Any], buckets: pd.DataFrame) 
     return list(dict.fromkeys(recommendations))
 
 
-def _blocked_result(status: str, *, as_of_date: str, data_source: str, min_rows: int, output_dir: str | Path, reason: str) -> dict[str, Any]:
+def _blocked_result(
+    status: str,
+    *,
+    as_of_date: str,
+    data_source: str,
+    min_rows: int,
+    output_dir: str | Path,
+    reason: str,
+    run_context: dict[str, Any],
+    run_tuning: bool = False,
+    tuning_profile: str = "small",
+    primary_metric: str = "composite",
+    save_tuning_candidates: bool = False,
+    apply_tuning: bool = False,
+    holdout_season: str | None = None,
+    holdout_start_date: str | None = None,
+    holdout_end_date: str | None = None,
+    train_start_date: str | None = None,
+    train_end_date: str | None = None,
+) -> dict[str, Any]:
     result = evaluate_projection_calibration(pd.DataFrame(), status=status, data_source=data_source)
     if status == "blocked_missing_historical_ratings":
         result["recommendations"] = ["historical_rating_snapshots_needed"]
     result["metrics"]["as_of_date"] = as_of_date
     result["metrics"]["min_rows"] = min_rows
     result["metrics"]["blocked_reason"] = reason
-    return _write_outputs(result, as_of_date=as_of_date, data_source=data_source, output_dir=output_dir, limitations=[reason])
+    return _write_outputs(
+        result,
+        as_of_date=as_of_date,
+        data_source=data_source,
+        output_dir=output_dir,
+        limitations=[reason],
+        run_context=run_context,
+        run_tuning=run_tuning,
+        tuning_profile=tuning_profile,
+        primary_metric=primary_metric,
+        save_tuning_candidates=save_tuning_candidates,
+        apply_tuning=apply_tuning,
+        holdout_season=holdout_season,
+        holdout_start_date=holdout_start_date,
+        holdout_end_date=holdout_end_date,
+        train_start_date=train_start_date,
+        train_end_date=train_end_date,
+    )
 
 
 def _international_historical_projection_rows(
@@ -389,12 +479,60 @@ def calibrate_baseline_projections(
     allow_diagnostic_leakage: bool = False,
     output_dir: str | Path = "outputs/calibration",
     max_rows: int | None = None,
+    cache_dir: str | Path = "data/source_cache/current_international",
+    run_tuning: bool = False,
+    tuning_profile: str = "small",
+    primary_metric: str = "composite",
+    save_tuning_candidates: bool = False,
+    apply_tuning: bool = False,
+    holdout_season: str | None = None,
+    holdout_start_date: str | None = None,
+    holdout_end_date: str | None = None,
+    train_start_date: str | None = None,
+    train_end_date: str | None = None,
 ) -> dict[str, Any]:
     run_date = as_of_date or date.today().isoformat()
+    config = {
+        "as_of_date": run_date,
+        "data_source": data_source,
+        "min_rows": min_rows,
+        "allow_diagnostic_leakage": allow_diagnostic_leakage,
+        "max_rows": max_rows,
+        "cache_dir": str(cache_dir),
+        "run_tuning": run_tuning,
+        "tuning_profile": tuning_profile,
+        "primary_metric": primary_metric,
+        "save_tuning_candidates": save_tuning_candidates,
+        "apply_tuning": apply_tuning,
+        "holdout_season": holdout_season,
+        "holdout_start_date": holdout_start_date,
+        "holdout_end_date": holdout_end_date,
+        "train_start_date": train_start_date,
+        "train_end_date": train_end_date,
+    }
+    run_context = _calibration_run_context(as_of_date=run_date, data_source=data_source, output_dir=output_dir, config=config)
     if data_source == "international_historical" and not allow_diagnostic_leakage:
-        projected, status, reason = _international_historical_projection_rows(max_rows=max_rows)
+        projected, status, reason = _international_historical_projection_rows(cache_dir=cache_dir, max_rows=max_rows)
         if status != "valid_calibration":
-            return _blocked_result(status, as_of_date=run_date, data_source=data_source, min_rows=min_rows, output_dir=output_dir, reason=reason)
+            return _blocked_result(
+                status,
+                as_of_date=run_date,
+                data_source=data_source,
+                min_rows=min_rows,
+                output_dir=output_dir,
+                reason=reason,
+                run_context=run_context,
+                run_tuning=run_tuning,
+                tuning_profile=tuning_profile,
+                primary_metric=primary_metric,
+                save_tuning_candidates=save_tuning_candidates,
+                apply_tuning=apply_tuning,
+                holdout_season=holdout_season,
+                holdout_start_date=holdout_start_date,
+                holdout_end_date=holdout_end_date,
+                train_start_date=train_start_date,
+                train_end_date=train_end_date,
+            )
         if len(projected) < min_rows:
             return _blocked_result(
                 "blocked_insufficient_rows",
@@ -403,6 +541,17 @@ def calibrate_baseline_projections(
                 min_rows=min_rows,
                 output_dir=output_dir,
                 reason=f"Only {len(projected)} leakage-safe historical international rows with matched snapshots were available; min_rows={min_rows}.",
+                run_context=run_context,
+                run_tuning=run_tuning,
+                tuning_profile=tuning_profile,
+                primary_metric=primary_metric,
+                save_tuning_candidates=save_tuning_candidates,
+                apply_tuning=apply_tuning,
+                holdout_season=holdout_season,
+                holdout_start_date=holdout_start_date,
+                holdout_end_date=holdout_end_date,
+                train_start_date=train_start_date,
+                train_end_date=train_end_date,
             )
         result = evaluate_projection_calibration(projected, status="valid_calibration", data_source=data_source)
         result["metrics"]["as_of_date"] = run_date
@@ -411,7 +560,24 @@ def calibrate_baseline_projections(
             "International calibration uses only match rows with historical rating snapshots on or before match date.",
             "No style-aware xG inputs are included yet; this measures the rating-only baseline.",
         ]
-        return _write_outputs(result, as_of_date=run_date, data_source=data_source, output_dir=output_dir, limitations=limitations)
+        return _write_outputs(
+            result,
+            as_of_date=run_date,
+            data_source=data_source,
+            output_dir=output_dir,
+            limitations=limitations,
+            run_context=run_context,
+            run_tuning=run_tuning,
+            tuning_profile=tuning_profile,
+            primary_metric=primary_metric,
+            save_tuning_candidates=save_tuning_candidates,
+            apply_tuning=apply_tuning,
+            holdout_season=holdout_season,
+            holdout_start_date=holdout_start_date,
+            holdout_end_date=holdout_end_date,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
+        )
     if data_source == "current_international_results":
         return _blocked_result(
             "blocked_missing_results",
@@ -420,6 +586,17 @@ def calibrate_baseline_projections(
             min_rows=min_rows,
             output_dir=output_dir,
             reason="Current international fixture projections do not include completed outcomes for calibration.",
+            run_context=run_context,
+            run_tuning=run_tuning,
+            tuning_profile=tuning_profile,
+            primary_metric=primary_metric,
+            save_tuning_candidates=save_tuning_candidates,
+            apply_tuning=apply_tuning,
+            holdout_season=holdout_season,
+            holdout_start_date=holdout_start_date,
+            holdout_end_date=holdout_end_date,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
         )
     matches = _load_club_historical(max_rows=max_rows)
     if matches.empty:
@@ -430,6 +607,17 @@ def calibrate_baseline_projections(
             min_rows=min_rows,
             output_dir=output_dir,
             reason="No usable historical match-result table was found.",
+            run_context=run_context,
+            run_tuning=run_tuning,
+            tuning_profile=tuning_profile,
+            primary_metric=primary_metric,
+            save_tuning_candidates=save_tuning_candidates,
+            apply_tuning=apply_tuning,
+            holdout_season=holdout_season,
+            holdout_start_date=holdout_start_date,
+            holdout_end_date=holdout_end_date,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
         )
     projected = _diagnostic_projection_rows(matches, min_rows=max_rows or len(matches))
     if len(projected) < min_rows:
@@ -440,6 +628,17 @@ def calibrate_baseline_projections(
             min_rows=min_rows,
             output_dir=output_dir,
             reason=f"Only {len(projected)} eligible historical rows were available; min_rows={min_rows}.",
+            run_context=run_context,
+            run_tuning=run_tuning,
+            tuning_profile=tuning_profile,
+            primary_metric=primary_metric,
+            save_tuning_candidates=save_tuning_candidates,
+            apply_tuning=apply_tuning,
+            holdout_season=holdout_season,
+            holdout_start_date=holdout_start_date,
+            holdout_end_date=holdout_end_date,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
         )
     status = "diagnostic_only_current_rating_leakage" if allow_diagnostic_leakage and data_source == "international_historical" else "valid_calibration"
     if data_source == "club_historical":
@@ -452,11 +651,46 @@ def calibrate_baseline_projections(
         limitations.append("Diagnostic leakage mode is labeled and must not be used to claim production calibration.")
     if data_source == "club_historical":
         limitations.append("Club historical calibration measures transparent goal-history baseline behavior, not the current international rating model.")
-    return _write_outputs(result, as_of_date=run_date, data_source=data_source, output_dir=output_dir, limitations=limitations)
+    return _write_outputs(
+        result,
+        as_of_date=run_date,
+        data_source=data_source,
+        output_dir=output_dir,
+        limitations=limitations,
+        run_context=run_context,
+        run_tuning=run_tuning,
+        tuning_profile=tuning_profile,
+        primary_metric=primary_metric,
+        save_tuning_candidates=save_tuning_candidates,
+        apply_tuning=apply_tuning,
+        holdout_season=holdout_season,
+        holdout_start_date=holdout_start_date,
+        holdout_end_date=holdout_end_date,
+        train_start_date=train_start_date,
+        train_end_date=train_end_date,
+    )
 
 
-def _write_outputs(result: dict[str, Any], *, as_of_date: str, data_source: str, output_dir: str | Path, limitations: list[str]) -> dict[str, Any]:
-    output = Path(output_dir) / as_of_date
+def _write_outputs(
+    result: dict[str, Any],
+    *,
+    as_of_date: str,
+    data_source: str,
+    output_dir: str | Path,
+    limitations: list[str],
+    run_context: dict[str, Any],
+    run_tuning: bool = False,
+    tuning_profile: str = "small",
+    primary_metric: str = "composite",
+    save_tuning_candidates: bool = False,
+    apply_tuning: bool = False,
+    holdout_season: str | None = None,
+    holdout_start_date: str | None = None,
+    holdout_end_date: str | None = None,
+    train_start_date: str | None = None,
+    train_end_date: str | None = None,
+) -> dict[str, Any]:
+    output = Path(run_context["run_dir"])
     output.mkdir(parents=True, exist_ok=True)
     paths = {
         "summary": output / "baseline_calibration_summary.md",
@@ -471,11 +705,16 @@ def _write_outputs(result: dict[str, Any], *, as_of_date: str, data_source: str,
     result["probability_buckets"].to_csv(paths["probability_buckets"], index=False)
     result["scoreline_calibration"].to_csv(paths["scoreline_calibration"], index=False)
     manifest = {
-        "run_id": f"baseline_calibration_{as_of_date}",
+        "run_id": run_context["run_id"],
+        "calibration_run_id": run_context["run_id"],
         "run_date": as_of_date,
-        "generated_at": _now_iso(),
+        "generated_at": run_context["created_at"],
+        "calibration_created_at": run_context["created_at"],
         "entry_type": "baseline_calibration",
         "data_source": data_source,
+        "calibration_data_source": data_source,
+        "calibration_output_dir": str(output),
+        "calibration_config_hash": run_context["config_hash"],
         "calibration_status": result["status"],
         "metrics": result["metrics"],
         "recommendations": result["recommendations"],
@@ -500,12 +739,88 @@ def _write_outputs(result: dict[str, Any], *, as_of_date: str, data_source: str,
         },
         "output_paths": {key: str(path) for key, path in paths.items()},
     }
-    tuning = write_baseline_tuning_diagnostics(result.get("rows", pd.DataFrame()), as_of_date=as_of_date, output_dir=output_dir)
-    manifest["baseline_tuning"] = tuning["manifest"]
-    manifest["output_paths"].update(tuning["paths"])
+    if run_tuning:
+        tuning = write_baseline_tuning_outputs(
+            result.get("rows", pd.DataFrame()),
+            run_dir=output,
+            baseline_metrics=result["metrics"],
+            tuning_profile=tuning_profile,
+            primary_metric=primary_metric,
+            save_tuning_candidates=save_tuning_candidates,
+            apply_tuning=apply_tuning,
+            holdout_season=holdout_season,
+            holdout_start_date=holdout_start_date,
+            holdout_end_date=holdout_end_date,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
+        )
+        manifest["baseline_tuning"] = tuning["manifest"]
+        manifest["output_paths"].update(tuning["paths"])
+    else:
+        manifest["baseline_tuning"] = {"status": "not_requested", "diagnostic_only": True, "production_defaults_changed": False}
     paths["manifest"].write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
     paths["summary"].write_text(_summary_markdown(manifest, result), encoding="utf-8")
-    return {**result, "manifest": manifest, "paths": {key: str(path) for key, path in paths.items()}, "run_dir": output}
+    _write_latest_manifests(manifest, run_context)
+    _write_calibration_run_index(Path(output_dir) / as_of_date)
+    all_paths = {key: str(path) for key, path in paths.items()}
+    all_paths.update(manifest["output_paths"])
+    return {**result, "manifest": manifest, "paths": all_paths, "run_dir": output}
+
+
+def _write_latest_manifests(manifest: dict[str, Any], run_context: dict[str, Any]) -> None:
+    latest = _latest_manifest_payload(manifest)
+    date_latest = Path(run_context["date_dir"]) / "latest_manifest.json"
+    source_latest = Path(run_context["source_dir"]) / "latest_manifest.json"
+    date_latest.parent.mkdir(parents=True, exist_ok=True)
+    source_latest.parent.mkdir(parents=True, exist_ok=True)
+    date_latest.write_text(json.dumps(latest, indent=2, default=str), encoding="utf-8")
+    source_latest.write_text(json.dumps(latest, indent=2, default=str), encoding="utf-8")
+
+
+def _write_calibration_run_index(date_dir: Path) -> Path:
+    manifests = sorted(date_dir.glob("*/*/calibration_manifest.json"))
+    rows: list[dict[str, Any]] = []
+    for manifest_path in manifests:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        metrics = manifest.get("metrics") or {}
+        tuning = manifest.get("baseline_tuning") or {}
+        rows.append({
+            "run_id": manifest.get("calibration_run_id") or manifest.get("run_id"),
+            "data_source": manifest.get("calibration_data_source") or manifest.get("data_source"),
+            "created_at": manifest.get("calibration_created_at") or manifest.get("generated_at"),
+            "status": manifest.get("calibration_status"),
+            "row_count": metrics.get("row_count"),
+            "leakage_status": "leakage_safe" if metrics.get("leakage_safe") else "diagnostic_or_blocked",
+            "wdl_log_loss": metrics.get("wdl_log_loss"),
+            "brier_score": metrics.get("brier_score"),
+            "total_goals_mae": metrics.get("total_goals_mae"),
+            "over_2_5_brier": metrics.get("over_under_2_5_brier_score"),
+            "recommendation": "; ".join(map(str, manifest.get("recommendations") or [])),
+            "tuning_status": tuning.get("status", "not_requested"),
+            "tuning_recommendation": tuning.get("best_recommendation", ""),
+            "output_dir": manifest.get("calibration_output_dir") or str(manifest_path.parent),
+        })
+    index_path = date_dir / "calibration_run_index.csv"
+    pd.DataFrame(rows, columns=[
+        "run_id",
+        "data_source",
+        "created_at",
+        "status",
+        "row_count",
+        "leakage_status",
+        "wdl_log_loss",
+        "brier_score",
+        "total_goals_mae",
+        "over_2_5_brier",
+        "recommendation",
+        "tuning_status",
+        "tuning_recommendation",
+        "output_dir",
+    ]).to_csv(index_path, index=False)
+    return index_path
 
 
 def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
@@ -513,8 +828,11 @@ def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
     lines = [
         "# Baseline Calibration",
         "",
+        f"- Calibration run ID: `{manifest['calibration_run_id']}`",
         f"- Calibration status: `{manifest['calibration_status']}`",
-        f"- Data source: `{manifest['data_source']}`",
+        f"- Data source: `{manifest['calibration_data_source']}`",
+        f"- Output directory: `{manifest['calibration_output_dir']}`",
+        f"- Config hash: `{manifest['calibration_config_hash']}`",
         f"- Row count: `{metrics.get('row_count')}`",
         f"- Leakage safe: `{metrics.get('leakage_safe')}`",
         f"- W/D/L log loss: `{metrics.get('wdl_log_loss')}`",
@@ -546,8 +864,16 @@ def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
         "",
         "- Current StatsBomb is not used as live data.",
         "- Proxy adjustments remain disabled.",
-        "- This report measures calibration; it does not tune the model.",
+        "- This report measures calibration; tuning output is diagnostic-only when requested.",
         "- No betting recommendations are produced.",
+        "",
+    ])
+    tuning = manifest.get("baseline_tuning") or {}
+    lines.extend([
+        "## Baseline Tuning",
+        "",
+        f"- Status: `{tuning.get('status', 'not_requested')}`",
+        f"- Production defaults changed: `{tuning.get('production_defaults_changed', False)}`",
         "",
     ])
     if not result["probability_buckets"].empty:
@@ -558,73 +884,22 @@ def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:
 
 
 def write_baseline_tuning_diagnostics(rows: pd.DataFrame, *, as_of_date: str, output_dir: str | Path = "outputs/calibration") -> dict[str, Any]:
-    output = Path(output_dir) / as_of_date / "baseline_tuning"
-    output.mkdir(parents=True, exist_ok=True)
-    paths = {
-        "baseline_tuning_summary": output / "baseline_tuning_summary.md",
-        "baseline_tuning_grid": output / "baseline_tuning_grid.csv",
-        "baseline_tuning_best_candidates": output / "baseline_tuning_best_candidates.csv",
-    }
-    if rows.empty or not {"home_rating", "away_rating", "home_goals", "away_goals"}.issubset(rows.columns):
-        grid = pd.DataFrame(columns=["diagnostic_status", "reason"])
-        grid.loc[0] = ["blocked_insufficient_rows", "Rating-backed historical rows are required for tuning diagnostics."]
-        best = grid.copy()
-        status = "blocked_insufficient_rows"
+    run_dir = Path(output_dir) / as_of_date
+    baseline_rows = rows.copy()
+    if not baseline_rows.empty and {"home_rating", "away_rating", "home_goals", "away_goals"}.issubset(baseline_rows.columns):
+        baseline_rows = project_rows_with_candidate(baseline_rows, default_rating_baseline_parameters())
+        baseline_metrics = evaluate_projection_calibration(baseline_rows, data_source="baseline_tuning_current_baseline")["metrics"]
     else:
-        grid_rows: list[dict[str, Any]] = []
-        for base_total in [2.15, 2.35, 2.55]:
-            for scale in [700, 900, 1100]:
-                projected = []
-                for _, row in rows.iterrows():
-                    diff = max(-350.0, min(350.0, float(row["home_rating"]) - float(row["away_rating"])))
-                    total = max(1.6, min(3.2, base_total + abs(diff) / scale * 0.18))
-                    home_share = 0.5 + max(-0.18, min(0.18, diff / scale))
-                    home_xg = round(max(0.35, total * home_share), 3)
-                    away_xg = round(max(0.35, total * (1 - home_share)), 3)
-                    probs = _projection_from_xg(home_xg, away_xg)
-                    projected.append({
-                        "home_goals": row["home_goals"],
-                        "away_goals": row["away_goals"],
-                        "home_xg": home_xg,
-                        "away_xg": away_xg,
-                        "home_win_prob": probs["home_win_prob"],
-                        "draw_prob": probs["draw_prob"],
-                        "away_win_prob": probs["away_win_prob"],
-                        "over_2_5_prob": probs["over_2_5_prob"],
-                        "most_likely_score": probs["most_likely_score"],
-                    })
-                eval_result = evaluate_projection_calibration(pd.DataFrame(projected), data_source="baseline_tuning_diagnostic")
-                metrics = eval_result["metrics"]
-                grid_rows.append({
-                    "diagnostic_status": "diagnostic_only",
-                    "rating_diff_to_goal_scale": scale,
-                    "baseline_total_goals": base_total,
-                    "rows": metrics["row_count"],
-                    "wdl_log_loss": metrics["wdl_log_loss"],
-                    "brier_score": metrics["brier_score"],
-                    "total_goals_mae": metrics["total_goals_mae"],
-                    "over_under_2_5_brier_score": metrics["over_under_2_5_brier_score"],
-                    "most_likely_score_hit_rate": metrics["most_likely_score_hit_rate"],
-                })
-        grid = pd.DataFrame(grid_rows)
-        best = grid.sort_values(["wdl_log_loss", "brier_score", "total_goals_mae"]).head(5)
-        status = "diagnostic_only"
-    grid.to_csv(paths["baseline_tuning_grid"], index=False)
-    best.to_csv(paths["baseline_tuning_best_candidates"], index=False)
-    paths["baseline_tuning_summary"].write_text(
-        "\n".join([
-            "# Baseline Tuning Diagnostics",
-            "",
-            f"- Status: `{status}`",
-            "- Diagnostic only; production defaults are not changed automatically.",
-            "- Avoid overfitting. Treat candidates as review evidence, not tuned settings.",
-        ]),
-        encoding="utf-8",
+        baseline_metrics = _empty_metrics("blocked_insufficient_rows", "baseline_tuning_current_baseline", 0)
+    return write_baseline_tuning_outputs(
+        rows,
+        run_dir=run_dir,
+        baseline_metrics=baseline_metrics,
+        tuning_profile="small",
+        primary_metric="composite",
+        save_tuning_candidates=False,
+        apply_tuning=False,
     )
-    return {
-        "manifest": {"status": status, "diagnostic_only": True, "rows": int(len(rows))},
-        "paths": {key: str(path) for key, path in paths.items()},
-    }
 
 
 def _markdown_table(frame: pd.DataFrame) -> str:
@@ -654,5 +929,6 @@ def format_calibration_terminal(result: dict[str, Any]) -> str:
         f"O/U 2.5 Brier: {metrics.get('over_under_2_5_brier_score')}",
         f"Most likely score hit rate: {metrics.get('most_likely_score_hit_rate')}",
         f"Recommendations: {', '.join(result['recommendations'])}",
+        f"Run dir: {result.get('run_dir')}",
         f"Summary: {result['paths']['summary']}",
     ])

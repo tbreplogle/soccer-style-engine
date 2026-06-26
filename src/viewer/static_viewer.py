@@ -437,12 +437,14 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "poisson" / "poisson_summary.md",
             run_dir / "current_international_source_summary.md",
             run_dir / "current_international_projection_report.md",
+            run_dir / "candidate_preview" / "candidate_projection_comparison_summary.md",
             run_dir / "fixture_readiness" / "fixture_readiness_summary.md",
             run_dir / "slate_selection" / "slate_selection_summary.md",
             run_dir / "fixture_deduplication" / "fixture_deduplication_summary.md",
             run_dir / "fixture_deduplication" / "projection_checkpoint_consistency.md",
             run_dir / "baseline_calibration_summary.md",
             run_dir / "baseline_tuning" / "baseline_tuning_summary.md",
+            run_dir / "baseline_tuning" / "tuning_holdout_summary.md",
             run_dir / "historical_seed_summary.md",
             run_dir / "source_audit" / "source_audit_summary.md",
             run_dir / "cache_seed" / "cache_seed_summary.md",
@@ -470,6 +472,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         f"<div class=\"metric\"><span>Dedupe before / after</span>{escape_html(entry.get('fixture_rows_before_dedupe') or '')} / {escape_html(entry.get('fixture_rows_after_dedupe') or '')}</div>",
         f"<div class=\"metric\"><span>Duplicates skipped / review</span>{escape_html(entry.get('duplicate_rows_skipped') or '')} / {escape_html(entry.get('possible_duplicate_review_rows') or '')}</div>",
         f"<div class=\"metric\"><span>Calibration</span>{escape_html(entry.get('calibration_status') or '')}</div>",
+        f"<div class=\"metric\"><span>Calibration source</span>{escape_html(entry.get('calibration_data_source') or '')}</div>",
+        f"<div class=\"metric\"><span>Calibration config hash</span>{escape_html(entry.get('calibration_config_hash') or '')}</div>",
+        f"<div class=\"metric\"><span>Tuning</span>{escape_html(entry.get('tuning_status') or '')}</div>",
+        f"<div class=\"metric\"><span>Tuning recommendation</span>{escape_html(entry.get('tuning_recommendation') or '')}</div>",
         f"<div class=\"metric\"><span>WDL log loss / Brier</span>{escape_html(entry.get('wdl_log_loss') or '')} / {escape_html(entry.get('brier_score') or '')}</div>",
         f"<div class=\"metric\"><span>Historical snapshots / results</span>{escape_html(entry.get('historical_rating_snapshot_rows') or '')} / {escape_html(entry.get('historical_results_rows') or '')}</div>",
         f"<div class=\"metric\"><span>Historical matches with ratings</span>{escape_html(entry.get('historical_matches_with_ratings_rows') or '')}</div>",
@@ -525,6 +531,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Projection Checkpoint Flags", "projection_checkpoint_flags.csv"),
         ("Current International Slate", "current_international_slate.csv"),
         ("Current International Projections", "current_international_projections.csv"),
+        ("Candidate Projection Preview", "candidate_preview/candidate_projection_comparison.csv"),
         ("Source Audit", "source_audit/source_audit.csv"),
         ("Fixture Coverage", "source_audit/fixture_coverage.csv"),
         ("Rating Coverage", "source_audit/rating_coverage.csv"),
@@ -549,6 +556,8 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Scoreline Calibration", "scoreline_calibration.csv"),
         ("Baseline Tuning Grid", "baseline_tuning/baseline_tuning_grid.csv"),
         ("Baseline Tuning Best Candidates", "baseline_tuning/baseline_tuning_best_candidates.csv"),
+        ("Tuning Train Metrics", "baseline_tuning/train_metrics.csv"),
+        ("Tuning Holdout Metrics", "baseline_tuning/holdout_metrics.csv"),
         ("Historical Rating Snapshots", "historical_rating_snapshots.csv"),
         ("Historical Results", "historical_results.csv"),
         ("Historical Matches With Ratings", "historical_matches_with_ratings.csv"),
@@ -599,6 +608,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         "selected range",
         "dedupe",
         "calibration",
+        "calibration source",
+        "tuning",
+        "tuning recommendation",
         "log loss",
         "brier",
         "skipped placeholders",
@@ -637,6 +649,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         rows.append(f"<td>{escape_html(entry.get('selected_date_range') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('duplicate_rows_skipped') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('calibration_status') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('calibration_data_source') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('tuning_status') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('tuning_recommendation') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('wdl_log_loss') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('brier_score') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('skipped_placeholder_rows') or '')}</td>")

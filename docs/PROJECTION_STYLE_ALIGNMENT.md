@@ -62,3 +62,17 @@ The current international board remains a rating-based baseline. Fixture dedupli
 Style adjustments should be layered only after the baseline has enough leakage-safe calibration evidence. The highest-value missing inputs are shots for/against, xG for/against, open-play and set-piece xG, possession or field-tilt proxies, directness/transition proxies, discipline, and verified absence/injury context.
 
 Current StatsBomb is not used as live data, proxy adjustments remain disabled by default, and generated probability outputs are not betting recommendations.
+
+## Phase 33 Calibration Organization And Tuning
+
+Phase 33 preserves calibration evidence by writing every calibration attempt to a unique run folder:
+
+```text
+outputs/calibration/YYYY-MM-DD/<data_source>/<run_id>/
+```
+
+This prevents one calibration run from overwriting another. The date folder keeps `latest_manifest.json`, each data source keeps its own `latest_manifest.json`, and `calibration_run_index.csv` summarizes runs, leakage status, core metrics, recommendation labels, tuning status, and output paths.
+
+Baseline tuning remains diagnostic-only. It can compare conservative rating-baseline parameter candidates and write a `candidate_model_config.json` for preview, but it does not change production defaults. Candidate preview output compares baseline versus candidate xG/probabilities under `outputs/current_international/YYYY-MM-DD/candidate_preview/`.
+
+This is still not true style alignment. Ratings are strength priors, not event/tracking style evidence. Any future style layer must remain traceable to measurable style inputs and must beat the organized baseline on leakage-safe validation.

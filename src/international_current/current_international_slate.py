@@ -36,6 +36,7 @@ from src.international_current.slate_selection import (
 )
 from src.international_current.stat_harvest import harvest_current_international_stats
 from src.analysis.poisson_output import write_poisson_outputs
+from src.analysis.baseline_tuning import project_candidate_xg
 from src.international_current.team_name_normalization import normalize_team_pair
 from src.models.international_projection import project_international_match
 
@@ -814,6 +815,78 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
     return path
 
 
+def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame, candidate_config: str | Path | None) -> dict[str, Any]:
+    if not candidate_config:
+        return {"status": "not_requested", "paths": {}}
+    config_path = Path(candidate_config)
+    if not config_path.exists():
+        return {"status": "blocked_missing_candidate_config", "paths": {}, "warning": f"Candidate config not found: {config_path}"}
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"status": "blocked_invalid_candidate_config", "paths": {}, "warning": str(exc)}
+    params = config.get("model_parameters") or config.get("parameters") or {}
+    preview_dir = run_dir / "candidate_preview"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    warning = "Diagnostic candidate preview only; production projection defaults are unchanged."
+    for _, row in projections.iterrows():
+        if pd.isna(row.get("home_rating")) or pd.isna(row.get("away_rating")):
+            rows.append({
+                "team_a": row.get("team_a", ""),
+                "team_b": row.get("team_b", ""),
+                "warning": "Candidate preview skipped because one or both ratings are missing.",
+            })
+            continue
+        candidate = project_candidate_xg(float(row["home_rating"]), float(row["away_rating"]), params)
+        baseline_home_prob = float(row.get("team_a_win_prob", 0.0) or 0.0)
+        candidate_home_prob = float(candidate["home_win_prob"])
+        rows.append({
+            "team_a": row.get("team_a", ""),
+            "team_b": row.get("team_b", ""),
+            "baseline_team_a_xg": row.get("team_a_xg_final"),
+            "baseline_team_b_xg": row.get("team_b_xg_final"),
+            "candidate_team_a_xg": candidate["home_xg"],
+            "candidate_team_b_xg": candidate["away_xg"],
+            "team_a_xg_delta": round(float(candidate["home_xg"]) - float(row.get("team_a_xg_final", 0.0)), 4),
+            "team_b_xg_delta": round(float(candidate["away_xg"]) - float(row.get("team_b_xg_final", 0.0)), 4),
+            "baseline_home_win_prob": baseline_home_prob,
+            "candidate_home_win_prob": candidate_home_prob,
+            "probability_delta": round(candidate_home_prob - baseline_home_prob, 4),
+            "baseline_projected_total": row.get("projected_total"),
+            "candidate_projected_total": candidate["projected_total"],
+            "baseline_most_likely_score": row.get("most_likely_score"),
+            "candidate_most_likely_score": candidate["most_likely_score"],
+            "warning": warning,
+        })
+    frame = pd.DataFrame(rows)
+    csv_path = preview_dir / "candidate_projection_comparison.csv"
+    summary_path = preview_dir / "candidate_projection_comparison_summary.md"
+    frame.to_csv(csv_path, index=False)
+    lines = [
+        "# Candidate Projection Preview",
+        "",
+        "- Diagnostic-only candidate config comparison.",
+        "- Production projection defaults are unchanged.",
+        f"- Candidate config: `{config_path}`",
+        "",
+        "## Comparison",
+        "",
+        *(_markdown_table(frame.head(20))),
+    ]
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
+    return {
+        "status": "written",
+        "candidate_config": str(config_path),
+        "paths": {
+            "candidate_projection_comparison": str(csv_path),
+            "candidate_projection_comparison_summary": str(summary_path),
+        },
+        "warning": warning,
+        "rows": int(len(frame)),
+    }
+
+
 def project_current_international(
     as_of_date: str,
     competition: str = "FIFA World Cup",
@@ -839,6 +912,7 @@ def project_current_international(
     dedupe_fixtures: bool = True,
     dedupe_review_threshold: float = 0.75,
     source_priority_mode: str = "balanced",
+    candidate_config: str | Path | None = None,
 ) -> dict[str, Any]:
     slate_result = build_current_international_slate(
         as_of_date=as_of_date,
@@ -1004,6 +1078,7 @@ def project_current_international(
     run_dir = slate_result["run_dir"]
     projection_path = run_dir / "current_international_projections.csv"
     projections.to_csv(projection_path, index=False)
+    candidate_preview = _write_candidate_projection_preview(run_dir, projections, candidate_config)
     poisson_paths: dict[str, Any] = {}
     if build_poisson_board and not projections.empty:
         poisson_rows = projections.rename(columns={"team_a_xg_final": "projected_home_xg", "team_b_xg_final": "projected_away_xg"})
@@ -1079,6 +1154,7 @@ def project_current_international(
         **manifest["output_paths"],
         "projection_report": str(report_path),
         "projections": str(projection_path),
+        "candidate_preview": candidate_preview,
         **selection_paths,
         "poisson": poisson_paths,
     }
@@ -1091,6 +1167,7 @@ def project_current_international(
         "slate_selection": slate_selection,
         "projections_path": projection_path,
         "projection_report_path": report_path,
+        "candidate_preview": candidate_preview,
         "poisson_paths": poisson_paths,
         "manifest_path": manifest_path,
         "manifest": manifest,
