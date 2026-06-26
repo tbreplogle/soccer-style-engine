@@ -1,0 +1,1 @@
+"""Club/league readiness helpers."""

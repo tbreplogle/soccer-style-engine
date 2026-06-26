@@ -14,6 +14,8 @@ The tuning grid can vary:
 
 Every candidate is evaluated against completed rows with measurable results. Candidates are labeled conservatively, including `keep_current_baseline`, `candidate_improves_wdl`, `candidate_improves_totals`, `candidate_balanced_improvement`, `candidate_overfits_or_unstable`, `needs_holdout_validation`, and related total-goals warnings.
 
+For club calibration, tuning uses measured prior-result strength indexes from the historical goal-history baseline. Those are not external ratings and must not be described as true team ratings or style inputs.
+
 ## Commands
 
 Run calibration without tuning:
@@ -22,10 +24,22 @@ Run calibration without tuning:
 python -m src.cli calibrate-baseline-projections --data-source international_historical --min-rows 50
 ```
 
+Run club calibration without tuning:
+
+```bash
+python -m src.cli calibrate-baseline-projections --data-source club_historical --min-rows 500
+```
+
 Run a small diagnostic grid:
 
 ```bash
 python -m src.cli calibrate-baseline-projections --data-source international_historical --min-rows 50 --run-tuning --tuning-profile small --primary-metric composite
+```
+
+Run a small club diagnostic grid:
+
+```bash
+python -m src.cli calibrate-baseline-projections --data-source club_historical --min-rows 500 --run-tuning --tuning-profile small --primary-metric composite --save-tuning-candidates
 ```
 
 Save a candidate config for preview:

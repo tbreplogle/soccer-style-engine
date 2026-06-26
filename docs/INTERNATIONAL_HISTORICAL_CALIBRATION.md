@@ -63,6 +63,12 @@ Generated outputs are ignored by git. Commit source, tests, docs, and placeholde
 
 Optional baseline tuning is documented in `docs/BASELINE_TUNING.md`. It is diagnostic-only and writes candidate configs only when requested. It does not alter production defaults or claim style-aware improvement.
 
+## Club Comparison
+
+Club historical calibration is separate from international calibration. Phase 34 writes a date-level comparison report at `outputs/calibration/YYYY-MM-DD/calibration_comparison_summary.md` when club or international calibration runs complete.
+
+Use the comparison to understand row counts and baseline behavior by data source. Do not combine club and international calibration into one model without separate validation.
+
 ## Style Readiness
 
 The calibrated baseline is the benchmark future style layers must beat. The most valuable next style inputs are shots for/against, xG for/against, open-play and set-piece xG, possession or field-tilt proxies, transition/directness proxies, discipline, and verified absence or injury inputs.

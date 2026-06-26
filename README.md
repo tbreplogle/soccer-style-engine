@@ -20,6 +20,7 @@ The project rule remains:
 - Open readable Poisson board pages from the static viewer for checkpoint runs.
 - Audit current international fixture/rating/stat source coverage from local public-source caches.
 - Seed current international source caches from public no-login/no-key connectors.
+- Check club league readiness and calibration availability before league projection runs.
 - Keep no-betting guardrails active by default.
 
 ## What It Does Not Do Yet
@@ -71,6 +72,16 @@ International workflows are available when local international data is supplied:
 ```
 
 International projections remain sparse/historical unless current international data is supplied. Club and international ratings stay separate.
+
+## Club League Readiness
+
+Check whether club league data is ready for current projection runs:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.cli check-league-readiness --as-of-date 2026-06-25 --leagues E0,E1,SP1,D1,I1,F1 --require-calibration --build-viewer
+```
+
+Club calibration and league readiness are documented in `docs/LEAGUE_PLAY_READINESS.md`. Style-aware xG adjustments remain future work; Phase 34 only repairs baseline calibration/readiness reporting.
 
 ## Tests
 
@@ -124,6 +135,7 @@ Commit source, tests, docs, scripts, examples, and sample input fixtures.
 - `docs/POISSON_BOARD_VIEWER.md`
 - `docs/CURRENT_INTERNATIONAL_SOURCE_HARVEST.md`
 - `docs/CURRENT_INTERNATIONAL_CACHE_SEEDING.md`
+- `docs/LEAGUE_PLAY_READINESS.md`
 
 ## Roadmap
 

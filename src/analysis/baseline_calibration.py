@@ -14,6 +14,7 @@ from src.analysis.baseline_tuning import (
     project_rows_with_candidate,
     write_baseline_tuning_outputs,
 )
+from src.data_ingestion.multi_league_football_data import normalize_multi_season_football_data
 from src.models.score_projection import _projection_from_xg
 from src.international_current.current_international_schema import CurrentInternationalFixture, CurrentInternationalTeamRating
 from src.international_current.historical_rating_matcher import attach_historical_ratings
@@ -30,6 +31,13 @@ CALIBRATION_STATUSES = {
     "blocked_missing_results",
     "blocked_insufficient_rows",
 }
+
+CLUB_REQUIRED_COLUMNS = ["date", "home_team", "away_team", "home_goals", "away_goals"]
+CLUB_HISTORICAL_PATHS = [
+    Path("data/processed/multi_season_match_results.csv"),
+    Path("data/processed/multi_league_current_match_results.csv"),
+    Path("data/processed/current_match_results.csv"),
+]
 
 
 def _now_iso() -> str:
@@ -327,6 +335,8 @@ def _blocked_result(
     holdout_end_date: str | None = None,
     train_start_date: str | None = None,
     train_end_date: str | None = None,
+    club_diagnostics: dict[str, Any] | None = None,
+    club_filter_breakdown: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     result = evaluate_projection_calibration(pd.DataFrame(), status=status, data_source=data_source)
     if status == "blocked_missing_historical_ratings":
@@ -334,6 +344,10 @@ def _blocked_result(
     result["metrics"]["as_of_date"] = as_of_date
     result["metrics"]["min_rows"] = min_rows
     result["metrics"]["blocked_reason"] = reason
+    if club_diagnostics is not None:
+        result["club_diagnostics"] = club_diagnostics
+    if club_filter_breakdown is not None:
+        result["club_filter_breakdown"] = club_filter_breakdown
     return _write_outputs(
         result,
         as_of_date=as_of_date,
@@ -416,18 +430,90 @@ def _international_historical_projection_rows(
     return pd.DataFrame(rows), "valid_calibration", ""
 
 
-def _load_club_historical(max_rows: int | None = None) -> pd.DataFrame:
-    for path in [
-        Path("data/processed/multi_season_match_results.csv"),
-        Path("data/processed/multi_league_current_match_results.csv"),
-        Path("data/processed/current_match_results.csv"),
-    ]:
-        if path.exists():
-            frame = pd.read_csv(path)
-            if {"date", "home_team", "away_team", "home_goals", "away_goals"}.issubset(frame.columns):
-                frame = frame.sort_values("date")
-                return frame.head(max_rows) if max_rows else frame
-    return pd.DataFrame()
+def _inspect_club_path(path: Path) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "path": str(path),
+        "exists": path.exists(),
+        "usable": False,
+        "rows": 0,
+        "required_columns_present": "",
+        "required_columns_missing": ", ".join(CLUB_REQUIRED_COLUMNS),
+        "leagues_found": "",
+        "seasons_found": "",
+        "date_min": "",
+        "date_max": "",
+        "error": "",
+    }
+    if not path.exists():
+        return row
+    try:
+        frame = pd.read_csv(path)
+    except Exception as exc:
+        row["error"] = str(exc)
+        return row
+    present = [column for column in CLUB_REQUIRED_COLUMNS if column in frame.columns]
+    missing = [column for column in CLUB_REQUIRED_COLUMNS if column not in frame.columns]
+    row["rows"] = int(len(frame))
+    row["required_columns_present"] = ", ".join(present)
+    row["required_columns_missing"] = ", ".join(missing)
+    row["usable"] = not missing
+    if "league" in frame:
+        row["leagues_found"] = ", ".join(map(str, sorted(frame["league"].dropna().astype(str).unique())))
+    if "season" in frame:
+        row["seasons_found"] = ", ".join(map(str, sorted(frame["season"].dropna().astype(str).unique())))
+    if "date" in frame:
+        parsed = pd.to_datetime(frame["date"], errors="coerce")
+        if parsed.notna().any():
+            row["date_min"] = parsed.min().date().isoformat()
+            row["date_max"] = parsed.max().date().isoformat()
+    return row
+
+
+def _rebuild_club_historical_from_raw() -> dict[str, Any]:
+    raw = Path("data/raw/football-data")
+    output = Path("data/processed/multi_season_match_results.csv")
+    files = sorted(raw.glob("*.csv")) if raw.exists() else []
+    result = {"attempted": False, "status": "not_attempted", "raw_dir": str(raw), "raw_files": len(files), "output_path": str(output), "rows": 0, "error": ""}
+    if output.exists() or not files:
+        return result
+    result["attempted"] = True
+    try:
+        frame = normalize_multi_season_football_data(raw, output_path=output)
+        result["rows"] = int(len(frame))
+        result["status"] = "rebuilt" if len(frame) else "rebuilt_empty"
+    except Exception as exc:
+        result["status"] = "failed"
+        result["error"] = str(exc)
+    return result
+
+
+def _load_club_historical(max_rows: int | None = None, *, include_diagnostics: bool = False) -> pd.DataFrame | tuple[pd.DataFrame, dict[str, Any]]:
+    rebuild = _rebuild_club_historical_from_raw()
+    searched = [_inspect_club_path(path) for path in CLUB_HISTORICAL_PATHS]
+    selected_path = ""
+    selected: pd.DataFrame = pd.DataFrame()
+    for row in searched:
+        if row["usable"]:
+            selected_path = str(row["path"])
+            selected = pd.read_csv(selected_path)
+            selected["date"] = pd.to_datetime(selected["date"], errors="coerce")
+            selected = selected.dropna(subset=["date"]).sort_values("date")
+            selected["date"] = selected["date"].dt.date.astype(str)
+            break
+    diagnostics = {
+        "paths_checked": [str(path) for path in CLUB_HISTORICAL_PATHS],
+        "path_inventory": searched,
+        "selected_path": selected_path,
+        "rebuild_from_raw": rebuild,
+        "total_raw_rows_found": int(len(selected)),
+        "leagues_found": sorted(selected["league"].dropna().astype(str).unique().tolist()) if not selected.empty and "league" in selected else [],
+        "seasons_found": sorted(selected["season"].dropna().astype(str).unique().tolist()) if not selected.empty and "season" in selected else [],
+        "date_min": selected["date"].min() if not selected.empty and "date" in selected else "",
+        "date_max": selected["date"].max() if not selected.empty and "date" in selected else "",
+    }
+    if max_rows and not selected.empty:
+        selected = selected.head(max_rows)
+    return (selected, diagnostics) if include_diagnostics else selected
 
 
 def _diagnostic_projection_rows(matches: pd.DataFrame, min_rows: int) -> pd.DataFrame:
@@ -452,10 +538,16 @@ def _diagnostic_projection_rows(matches: pd.DataFrame, min_rows: int) -> pd.Data
             probs = _projection_from_xg(float(home_xg), float(away_xg))
             rows.append({
                 "date": match["date"].date().isoformat(),
+                "league": match.get("league", ""),
+                "league_name": match.get("league_name", ""),
+                "season": match.get("season", ""),
+                "season_code": match.get("season_code", ""),
                 "home_team": home,
                 "away_team": away,
                 "home_goals": float(match["home_goals"]),
                 "away_goals": float(match["away_goals"]),
+                "home_strength_index": float(np.mean([item[0] - item[1] for item in home_hist])) if home_hist else 0.0,
+                "away_strength_index": float(np.mean([item[0] - item[1] for item in away_hist])) if away_hist else 0.0,
                 "home_xg": float(home_xg),
                 "away_xg": float(away_xg),
                 "home_win_prob": probs["home_win_prob"],
@@ -469,6 +561,71 @@ def _diagnostic_projection_rows(matches: pd.DataFrame, min_rows: int) -> pd.Data
         history.setdefault(home, []).append((home_goals, away_goals))
         history.setdefault(away, []).append((away_goals, home_goals))
     return pd.DataFrame(rows).head(min_rows) if len(rows) > min_rows else pd.DataFrame(rows)
+
+
+def _club_filter_breakdown(matches: pd.DataFrame, projected: pd.DataFrame, *, min_rows: int, max_rows: int | None) -> pd.DataFrame:
+    if matches.empty:
+        return pd.DataFrame([
+            {"step": "raw_loaded", "rows": 0, "detail": "No usable club historical file loaded."},
+            {"step": "eligible_prior_history", "rows": 0, "detail": f"Requires at least {min_rows} eligible rows."},
+        ])
+    work = matches.copy()
+    required_present = all(column in work.columns for column in CLUB_REQUIRED_COLUMNS)
+    work["date"] = pd.to_datetime(work["date"], errors="coerce") if "date" in work else pd.NaT
+    goals = work.copy()
+    for column in ["home_goals", "away_goals"]:
+        if column in goals:
+            goals[column] = pd.to_numeric(goals[column], errors="coerce")
+    after_required = len(work) if required_present else 0
+    after_date = int(work["date"].notna().sum()) if "date" in work else 0
+    after_goals = int(goals.dropna(subset=["home_goals", "away_goals"]).shape[0]) if {"home_goals", "away_goals"}.issubset(goals.columns) else 0
+    eligible_full = _diagnostic_projection_rows(matches, min_rows=len(matches)) if max_rows else projected
+    return pd.DataFrame([
+        {"step": "raw_loaded", "rows": int(len(matches)), "detail": "Rows loaded from selected processed club historical file."},
+        {"step": "required_columns", "rows": after_required, "detail": "Required columns present." if required_present else "Required columns missing."},
+        {"step": "valid_dates", "rows": after_date, "detail": "Rows with parseable match date."},
+        {"step": "completed_results", "rows": after_goals, "detail": "Rows with home and away goals."},
+        {"step": "eligible_prior_history", "rows": int(len(eligible_full)), "detail": "Rows after each team has at least three prior matches before max_rows."},
+        {"step": "max_rows_applied_after_eligibility", "rows": int(len(projected.head(max_rows))) if max_rows else int(len(projected)), "detail": f"max_rows={max_rows}" if max_rows else "No max_rows limit."},
+    ])
+
+
+def _summary_record(metrics: dict[str, Any], recommendation: str) -> dict[str, Any]:
+    return {
+        "row_count": metrics.get("row_count"),
+        "wdl_log_loss": metrics.get("wdl_log_loss"),
+        "brier_score": metrics.get("brier_score"),
+        "accuracy": metrics.get("accuracy"),
+        "total_goals_mae": metrics.get("total_goals_mae"),
+        "over_2_5_brier": metrics.get("over_under_2_5_brier_score"),
+        "most_likely_score_hit_rate": metrics.get("most_likely_score_hit_rate"),
+        "avg_predicted_total": metrics.get("mean_projected_total"),
+        "avg_actual_total": metrics.get("mean_actual_total"),
+        "recommendation": recommendation,
+    }
+
+
+def _grouped_calibration_outputs(rows: pd.DataFrame, group_cols: list[str]) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if rows.empty or not all(column in rows.columns for column in group_cols):
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    summaries: list[dict[str, Any]] = []
+    probability: list[pd.DataFrame] = []
+    totals: list[pd.DataFrame] = []
+    for keys, group in rows.groupby(group_cols, dropna=False):
+        key_values = keys if isinstance(keys, tuple) else (keys,)
+        key_payload = {column: value for column, value in zip(group_cols, key_values)}
+        result = evaluate_projection_calibration(group, data_source="club_historical_group")
+        recommendation = "; ".join(result["recommendations"])
+        summaries.append({**key_payload, **_summary_record(result["metrics"], recommendation)})
+        if not result["probability_buckets"].empty:
+            probability.append(pd.concat([pd.DataFrame([key_payload] * len(result["probability_buckets"])).reset_index(drop=True), result["probability_buckets"].reset_index(drop=True)], axis=1))
+        if not result["totals_calibration"].empty:
+            totals.append(pd.concat([pd.DataFrame([key_payload] * len(result["totals_calibration"])).reset_index(drop=True), result["totals_calibration"].reset_index(drop=True)], axis=1))
+    return (
+        pd.DataFrame(summaries),
+        pd.concat(probability, ignore_index=True) if probability else pd.DataFrame(),
+        pd.concat(totals, ignore_index=True) if totals else pd.DataFrame(),
+    )
 
 
 def calibrate_baseline_projections(
@@ -598,8 +755,15 @@ def calibrate_baseline_projections(
             train_start_date=train_start_date,
             train_end_date=train_end_date,
         )
-    matches = _load_club_historical(max_rows=max_rows)
+    try:
+        loaded = _load_club_historical(include_diagnostics=True)
+    except TypeError:
+        loaded = (_load_club_historical(), {"paths_checked": [str(path) for path in CLUB_HISTORICAL_PATHS], "path_inventory": [], "selected_path": "test_monkeypatch", "total_raw_rows_found": 0})
+    matches, club_diagnostics = loaded if isinstance(loaded, tuple) else (loaded, {})
     if matches.empty:
+        breakdown = _club_filter_breakdown(matches, pd.DataFrame(), min_rows=min_rows, max_rows=max_rows)
+        club_diagnostics["reason_blocked"] = "No usable historical match-result table was found."
+        club_diagnostics["suggested_repair"] = "Restore data/processed/multi_season_match_results.csv or rebuild it from existing data/raw/football-data CSVs."
         return _blocked_result(
             "blocked_missing_results",
             as_of_date=run_date,
@@ -618,9 +782,18 @@ def calibrate_baseline_projections(
             holdout_end_date=holdout_end_date,
             train_start_date=train_start_date,
             train_end_date=train_end_date,
+            club_diagnostics=club_diagnostics,
+            club_filter_breakdown=breakdown,
         )
     projected = _diagnostic_projection_rows(matches, min_rows=max_rows or len(matches))
+    breakdown = _club_filter_breakdown(matches, projected, min_rows=min_rows, max_rows=max_rows)
     if len(projected) < min_rows:
+        club_diagnostics["reason_blocked"] = (
+            f"Only {len(projected)} selected eligible historical rows were available after max_rows={max_rows}; min_rows={min_rows}."
+            if max_rows
+            else f"Only {len(projected)} eligible historical rows were available; min_rows={min_rows}."
+        )
+        club_diagnostics["suggested_repair"] = "If --max-rows is set, increase or remove it so enough prior-history rows survive eligibility filtering."
         return _blocked_result(
             "blocked_insufficient_rows",
             as_of_date=run_date,
@@ -639,11 +812,18 @@ def calibrate_baseline_projections(
             holdout_end_date=holdout_end_date,
             train_start_date=train_start_date,
             train_end_date=train_end_date,
+            club_diagnostics=club_diagnostics,
+            club_filter_breakdown=breakdown,
         )
     status = "diagnostic_only_current_rating_leakage" if allow_diagnostic_leakage and data_source == "international_historical" else "valid_calibration"
     if data_source == "club_historical":
         status = "valid_calibration"
     result = evaluate_projection_calibration(projected.head(max_rows) if max_rows else projected, status=status, data_source=data_source)
+    if data_source == "club_historical":
+        club_diagnostics["reason_blocked"] = ""
+        club_diagnostics["suggested_repair"] = "No repair needed; club historical calibration has enough eligible rows."
+        result["club_diagnostics"] = club_diagnostics
+        result["club_filter_breakdown"] = breakdown
     result["metrics"]["as_of_date"] = run_date
     result["metrics"]["min_rows"] = min_rows
     limitations = []
@@ -700,10 +880,35 @@ def _write_outputs(
         "scoreline_calibration": output / "scoreline_calibration.csv",
         "manifest": output / "calibration_manifest.json",
     }
+    if data_source == "club_historical":
+        paths.update({
+            "club_calibration_diagnostics": output / "club_calibration_diagnostics.md",
+            "club_calibration_filter_breakdown": output / "club_calibration_filter_breakdown.csv",
+            "league_calibration_summary": output / "league_calibration_summary.csv",
+            "league_probability_buckets": output / "league_probability_buckets.csv",
+            "league_totals_calibration": output / "league_totals_calibration.csv",
+            "season_calibration_summary": output / "season_calibration_summary.csv",
+            "league_season_calibration_summary": output / "league_season_calibration_summary.csv",
+        })
     result["wdl_calibration"].to_csv(paths["wdl_calibration"], index=False)
     result["totals_calibration"].to_csv(paths["totals_calibration"], index=False)
     result["probability_buckets"].to_csv(paths["probability_buckets"], index=False)
     result["scoreline_calibration"].to_csv(paths["scoreline_calibration"], index=False)
+    if data_source == "club_historical":
+        diagnostics = result.get("club_diagnostics") or {}
+        filter_breakdown = result.get("club_filter_breakdown", pd.DataFrame())
+        if isinstance(filter_breakdown, pd.DataFrame):
+            filter_breakdown.to_csv(paths["club_calibration_filter_breakdown"], index=False)
+        paths["club_calibration_diagnostics"].write_text(_club_diagnostics_markdown(diagnostics, filter_breakdown), encoding="utf-8")
+        rows = result.get("rows", pd.DataFrame())
+        league_summary, league_buckets, league_totals = _grouped_calibration_outputs(rows, ["league"])
+        season_summary, _, _ = _grouped_calibration_outputs(rows, ["season"])
+        league_season_summary, _, _ = _grouped_calibration_outputs(rows, ["league", "season"])
+        league_summary.to_csv(paths["league_calibration_summary"], index=False)
+        league_buckets.to_csv(paths["league_probability_buckets"], index=False)
+        league_totals.to_csv(paths["league_totals_calibration"], index=False)
+        season_summary.to_csv(paths["season_calibration_summary"], index=False)
+        league_season_summary.to_csv(paths["league_season_calibration_summary"], index=False)
     manifest = {
         "run_id": run_context["run_id"],
         "calibration_run_id": run_context["run_id"],
@@ -762,6 +967,7 @@ def _write_outputs(
     paths["summary"].write_text(_summary_markdown(manifest, result), encoding="utf-8")
     _write_latest_manifests(manifest, run_context)
     _write_calibration_run_index(Path(output_dir) / as_of_date)
+    _write_calibration_comparison_summary(Path(output_dir) / as_of_date)
     all_paths = {key: str(path) for key, path in paths.items()}
     all_paths.update(manifest["output_paths"])
     return {**result, "manifest": manifest, "paths": all_paths, "run_dir": output}
@@ -821,6 +1027,97 @@ def _write_calibration_run_index(date_dir: Path) -> Path:
         "output_dir",
     ]).to_csv(index_path, index=False)
     return index_path
+
+
+def _write_calibration_comparison_summary(date_dir: Path) -> Path:
+    latest_by_source: dict[str, dict[str, Any]] = {}
+    for manifest_path in sorted(date_dir.glob("*/*/calibration_manifest.json")):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        source = str(manifest.get("calibration_data_source") or manifest.get("data_source") or "")
+        if source not in {"club_historical", "international_historical"}:
+            continue
+        current = latest_by_source.get(source)
+        if current is None or str(manifest.get("calibration_created_at") or "") > str(current.get("calibration_created_at") or ""):
+            latest_by_source[source] = manifest
+    rows = []
+    for source in ["club_historical", "international_historical"]:
+        manifest = latest_by_source.get(source)
+        if not manifest:
+            rows.append({"data_source": source, "status": "missing_latest_run"})
+            continue
+        metrics = manifest.get("metrics") or {}
+        tuning = manifest.get("baseline_tuning") or {}
+        rows.append({
+            "data_source": source,
+            "status": manifest.get("calibration_status"),
+            "row_count": metrics.get("row_count"),
+            "wdl_log_loss": metrics.get("wdl_log_loss"),
+            "brier_score": metrics.get("brier_score"),
+            "accuracy": metrics.get("accuracy"),
+            "total_goals_mae": metrics.get("total_goals_mae"),
+            "over_2_5_brier": metrics.get("over_under_2_5_brier_score"),
+            "most_likely_score_hit_rate": metrics.get("most_likely_score_hit_rate"),
+            "recommendation": "; ".join(map(str, manifest.get("recommendations") or [])),
+            "tuning_recommendation": tuning.get("best_recommendation", ""),
+            "output_dir": manifest.get("calibration_output_dir"),
+        })
+    frame = pd.DataFrame(rows)
+    path = date_dir / "calibration_comparison_summary.md"
+    lines = [
+        "# Calibration Comparison Summary",
+        "",
+        "This compares latest club and international calibration runs. It does not combine them into one model.",
+        "",
+        _markdown_table(frame),
+        "",
+        "## Guardrails",
+        "",
+        "- Production defaults are unchanged.",
+        "- Club and international calibration remain separate.",
+        "- Current StatsBomb live data is not used.",
+        "- No betting recommendations are produced.",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def _club_diagnostics_markdown(diagnostics: dict[str, Any], filter_breakdown: pd.DataFrame | None) -> str:
+    inventory = pd.DataFrame(diagnostics.get("path_inventory") or [])
+    lines = [
+        "# Club Calibration Diagnostics",
+        "",
+        f"- Selected path: `{diagnostics.get('selected_path', '')}`",
+        f"- Total raw rows found: `{diagnostics.get('total_raw_rows_found', 0)}`",
+        f"- Date range: `{diagnostics.get('date_min', '')}` to `{diagnostics.get('date_max', '')}`",
+        f"- Leagues found: `{', '.join(map(str, diagnostics.get('leagues_found') or []))}`",
+        f"- Seasons found: `{', '.join(map(str, diagnostics.get('seasons_found') or []))}`",
+        f"- Reason blocked: `{diagnostics.get('reason_blocked', '')}`",
+        f"- Suggested repair: {diagnostics.get('suggested_repair', '')}",
+        "",
+        "## Paths Checked",
+        "",
+    ]
+    if inventory.empty:
+        lines.append("_No path inventory available._")
+    else:
+        lines.append(_markdown_table(inventory))
+    lines.extend(["", "## Filter Breakdown", ""])
+    if filter_breakdown is not None and not filter_breakdown.empty:
+        lines.append(_markdown_table(filter_breakdown))
+    else:
+        lines.append("_No filter breakdown available._")
+    rebuild = diagnostics.get("rebuild_from_raw") or {}
+    if rebuild:
+        lines.extend([
+            "",
+            "## Rebuild From Raw",
+            "",
+            _markdown_table(pd.DataFrame([rebuild])),
+        ])
+    return "\n".join(lines)
 
 
 def _summary_markdown(manifest: dict[str, Any], result: dict[str, Any]) -> str:

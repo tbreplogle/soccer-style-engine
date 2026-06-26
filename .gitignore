@@ -37,6 +37,9 @@ outputs/source_probes/**
 outputs/current_international/
 outputs/current_international/*
 outputs/current_international/**
+outputs/club/
+outputs/club/*
+outputs/club/**
 outputs/projection_checkpoints/
 outputs/projection_checkpoints/*
 outputs/projection_checkpoints/**

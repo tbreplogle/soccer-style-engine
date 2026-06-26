@@ -12,6 +12,7 @@ from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.analysis.projection_checkpoint import format_checkpoint_terminal, run_projection_checkpoint
 from src.analysis.baseline_calibration import calibrate_baseline_projections, format_calibration_terminal
+from src.club.league_readiness import check_league_readiness
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
 from src.data_ingestion.international_data import build_international_match_dataset, list_international_competitions
@@ -558,6 +559,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--holdout-end-date")
     p.add_argument("--train-start-date")
     p.add_argument("--train-end-date")
+
+    p = sub.add_parser("check-league-readiness")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--season")
+    p.add_argument("--leagues", default="E0,E1,SP1,D1,I1,F1")
+    p.add_argument("--require-calibration", action="store_true")
+    p.add_argument("--require-current-fixtures", action="store_true")
+    p.add_argument("--build-viewer", action="store_true")
+    p.add_argument("--max-matches", type=int, default=20)
+    p.add_argument("--output-dir", default="outputs/club")
+    p.add_argument("--current-input", default="data/processed/multi_league_current_match_results.csv")
+    p.add_argument("--historical-input", default="data/processed/multi_season_match_results.csv")
+    p.add_argument("--calibration-root", default="outputs/calibration")
+    p.add_argument("--viewer-output-dir", default="outputs/viewer")
 
     p = sub.add_parser("seed-international-historical-calibration-data")
     p.add_argument("--start-date", required=True)
@@ -1194,6 +1209,30 @@ def main(argv: list[str] | None = None) -> None:
             train_end_date=args.train_end_date,
         )
         print(format_calibration_terminal(result))
+    elif args.command == "check-league-readiness":
+        leagues = [league.strip() for league in args.leagues.split(",") if league.strip()]
+        result = check_league_readiness(
+            as_of_date=args.as_of_date,
+            season=args.season,
+            leagues=leagues,
+            require_calibration=args.require_calibration,
+            require_current_fixtures=args.require_current_fixtures,
+            build_viewer=args.build_viewer,
+            max_matches=args.max_matches,
+            output_dir=args.output_dir,
+            current_input=args.current_input,
+            historical_input=args.historical_input,
+            calibration_root=args.calibration_root,
+            viewer_output_dir=args.viewer_output_dir,
+        )
+        print(f"League readiness status: {result['status']}")
+        print(f"Summary: {result['paths']['league_readiness_summary']}")
+        print(f"By league: {result['paths']['league_readiness_by_league']}")
+        print(f"Data inventory: {result['paths']['club_data_inventory']}")
+        print(result["by_league"][["league", "status", "current_rows", "historical_rows", "future_fixtures", "calibration_status"]].to_string(index=False))
+        if result.get("viewer"):
+            print(f"Viewer: {result['viewer']['viewer_output_path']}")
+            print(f"Viewer safety scan: {result['viewer']['safety_scan_status']}")
     elif args.command == "seed-international-historical-calibration-data":
         result = seed_international_historical_calibration_data(
             start_date=args.start_date,

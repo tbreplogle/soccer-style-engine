@@ -23,6 +23,8 @@ TUNING_RECOMMENDATIONS = {
     "totals_improved_wdl_hurt",
 }
 
+MAX_TUNING_ROWS = 500
+
 
 def default_rating_baseline_parameters() -> dict[str, float]:
     return {
@@ -32,6 +34,14 @@ def default_rating_baseline_parameters() -> dict[str, float]:
         "draw_dampening": 1.0,
         "total_goals_adjustment": 0.0,
     }
+
+
+def _limit_tuning_rows(rows: pd.DataFrame, limit: int = MAX_TUNING_ROWS) -> pd.DataFrame:
+    if len(rows) <= limit:
+        return rows.copy()
+    ordered = rows.sort_values("date").reset_index(drop=True) if "date" in rows.columns else rows.reset_index(drop=True)
+    indices = np.linspace(0, len(ordered) - 1, limit).round().astype(int)
+    return ordered.iloc[sorted(set(indices))].copy()
 
 
 def tuning_grid(profile: str = "small") -> list[dict[str, float]]:
@@ -49,10 +59,10 @@ def tuning_grid(profile: str = "small") -> list[dict[str, float]]:
         total_adj = [-0.1, 0.0, 0.1]
     else:
         scales = [750.0, 900.0, 1050.0]
-        totals = [2.2, 2.35, 2.5]
+        totals = [2.25, 2.45]
         neutral = [0.0]
-        draw = [0.96, 1.0, 1.04]
-        total_adj = [-0.08, 0.0, 0.08]
+        draw = [1.0]
+        total_adj = [0.0]
     return [
         {
             "rating_diff_to_goal_scale": scale,
@@ -91,11 +101,13 @@ def project_candidate_xg(home_rating: float, away_rating: float, params: dict[st
 
 
 def project_rows_with_candidate(rows: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame:
+    home_strength, away_strength = _strength_columns(rows)
     projected: list[dict[str, Any]] = []
     for _, row in rows.iterrows():
-        candidate = project_candidate_xg(float(row["home_rating"]), float(row["away_rating"]), params)
+        candidate = project_candidate_xg(float(row[home_strength]), float(row[away_strength]), params)
         projected.append({
             "date": row.get("date", ""),
+            "league": row.get("league", ""),
             "season": row.get("season", ""),
             "home_team": row.get("home_team", ""),
             "away_team": row.get("away_team", ""),
@@ -121,11 +133,11 @@ def evaluate_tuning_grid(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     from src.analysis.baseline_calibration import evaluate_projection_calibration
 
-    if rows.empty or not {"home_rating", "away_rating", "home_goals", "away_goals"}.issubset(rows.columns):
+    if rows.empty or not {"home_goals", "away_goals"}.issubset(rows.columns) or _strength_columns(rows) == ("", ""):
         grid = pd.DataFrame([{
             "diagnostic_status": "blocked_insufficient_rows",
             "recommendation": "insufficient_rows",
-            "reason": "Rating-backed historical rows are required for baseline tuning diagnostics.",
+            "reason": "Rating-backed rows or measured strength-index rows are required for baseline tuning diagnostics.",
         }])
         return grid, grid.copy()
     baseline = baseline_metrics or evaluate_projection_calibration(rows, data_source="baseline_tuning_current_baseline")["metrics"]
@@ -175,6 +187,8 @@ def write_baseline_tuning_outputs(
 ) -> dict[str, Any]:
     output = Path(run_dir) / "baseline_tuning"
     output.mkdir(parents=True, exist_ok=True)
+    original_row_count = int(len(rows))
+    rows = _limit_tuning_rows(rows)
     paths = {
         "baseline_tuning_summary": output / "baseline_tuning_summary.md",
         "baseline_tuning_grid": output / "baseline_tuning_grid.csv",
@@ -242,9 +256,12 @@ def write_baseline_tuning_outputs(
     manifest = {
         "status": "diagnostic_only" if candidate_params else "blocked_insufficient_rows",
         "diagnostic_only": True,
-        "rows": int(len(rows)),
+        "rows": original_row_count,
+        "rows_evaluated": int(len(rows)),
+        "row_sampling": "deterministic_even_sample" if len(rows) < original_row_count else "none",
         "tuning_profile": tuning_profile,
         "primary_metric": primary_metric,
+        "strength_input_columns": _strength_columns(rows),
         "candidate_config_written": bool(candidate_config_path),
         "production_defaults_changed": False,
         "holdout": holdout_summary,
@@ -327,6 +344,14 @@ def _candidate_params_from_row(row: pd.Series) -> dict[str, float]:
         "total_goals_adjustment",
     ]
     return {key: float(row[key]) for key in keys if key in row}
+
+
+def _strength_columns(rows: pd.DataFrame) -> tuple[str, str]:
+    if {"home_rating", "away_rating"}.issubset(rows.columns):
+        return "home_rating", "away_rating"
+    if {"home_strength_index", "away_strength_index"}.issubset(rows.columns):
+        return "home_strength_index", "away_strength_index"
+    return "", ""
 
 
 def _split_train_holdout(

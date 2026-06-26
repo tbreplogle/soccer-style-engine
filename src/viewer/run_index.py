@@ -98,6 +98,17 @@ HISTORICAL_SEED_OUTPUT_NAMES = (
     "historical_seed_manifest.json",
 )
 
+CLUB_READINESS_OUTPUT_NAMES = (
+    "league_readiness_summary.md",
+    "league_readiness_by_league.csv",
+    "club_data_inventory.csv",
+    "club_projection_readiness.csv",
+    "club_calibration_readiness.csv",
+    "league_readiness_manifest.json",
+    "club_slate_projections.csv",
+    "club_slate_report.md",
+)
+
 
 def _empty_entry(run_dir: Path, error: str = "") -> dict[str, Any]:
     present = sorted(path.name for path in run_dir.iterdir()) if run_dir.exists() and run_dir.is_dir() else []
@@ -357,6 +368,38 @@ def _historical_seed_entry(seed_dir: Path, manifest_path: Path) -> dict[str, Any
     }
 
 
+def _club_readiness_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(run_dir, "malformed_league_readiness_manifest")
+        entry["entry_type"] = "club_league_readiness"
+        entry["status"] = "malformed_league_readiness_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+    present = [name for name in CLUB_READINESS_OUTPUT_NAMES if (run_dir / name).exists()]
+    return {
+        "entry_type": "club_league_readiness",
+        "run_date": str(manifest.get("as_of_date") or run_dir.parent.name),
+        "run_id": str(manifest.get("run_id") or f"club_league_readiness_{run_dir.parent.name}"),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("status") or "unknown"),
+        "currentness_status": "club_league_readiness",
+        "season_sanity_status": "not_applicable",
+        "leagues": list(manifest.get("leagues") or []),
+        "row_count": 0,
+        "warnings_count": 1 if str(manifest.get("status") or "").endswith("warnings") else 0,
+        "warnings": ["League readiness has warnings; inspect by-league output."] if str(manifest.get("status") or "").endswith("warnings") else [],
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(run_dir / "league_readiness_summary.md") if (run_dir / "league_readiness_summary.md").exists() else "",
+        "run_dir": str(run_dir),
+        "slate_type": "club_league_readiness",
+        "error": "",
+    }
+
+
 def _iter_run_entries(root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
@@ -406,6 +449,15 @@ def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _iter_club_readiness_entries(root: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if not root.exists() or not root.is_dir():
+        return entries
+    for manifest_path in sorted(root.glob("*/league_readiness/league_readiness_manifest.json"), key=lambda p: str(p), reverse=True):
+        entries.append(_club_readiness_entry(manifest_path.parent, manifest_path))
+    return entries
+
+
 def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, Any]]:
     root = Path(runs_root)
     if not root.exists() or not root.is_dir():
@@ -418,7 +470,9 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
         (root / "projection_checkpoints").exists()
         or (root / "current_international").exists()
         or (root / "calibration").exists()
+        or (root / "club").exists()
         or root.name == "calibration"
+        or root.name == "club"
     ) and root.name != "runs":
         run_roots = []
     for run_root in run_roots:
@@ -431,6 +485,8 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
     entries.extend(_iter_current_international_entries(current_international_root))
     calibration_root = root if root.name == "calibration" else root / "calibration"
     entries.extend(_iter_calibration_entries(calibration_root))
+    club_root = root if root.name == "club" else root / "club"
+    entries.extend(_iter_club_readiness_entries(club_root))
     return sorted(entries, key=lambda item: (item.get("run_date", ""), item.get("generated_at", "")), reverse=True)
 
 
