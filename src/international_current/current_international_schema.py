@@ -163,6 +163,15 @@ class CurrentInternationalSlateRow(_DictMixin):
     slate_skip_reason: str = ""
     slate_window: str = ""
     selected_by_slate_filter: bool = False
+    fixture_key: str = ""
+    deduplication_status: str = "unique"
+    duplicate_group_id: str = ""
+    primary_source: str = ""
+    duplicate_sources: str = ""
+    dedupe_reason: str = ""
+    dedupe_confidence: float = 0.0
+    source_priority_score: float = 0.0
+    source_priority_reason: str = ""
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:

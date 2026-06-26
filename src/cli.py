@@ -11,6 +11,7 @@ from src.agents.free_proxy_matchup_agent import analyze_free_proxy_matchup
 from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.analysis.projection_checkpoint import format_checkpoint_terminal, run_projection_checkpoint
+from src.analysis.baseline_calibration import calibrate_baseline_projections, format_calibration_terminal
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
 from src.data_ingestion.international_data import build_international_match_dataset, list_international_competitions
@@ -427,6 +428,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh-fixtures", action="store_true")
     p.add_argument("--refresh-ratings", action="store_true")
     p.add_argument("--refresh-stats", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
 
     p = sub.add_parser("audit-current-international-sources")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -440,6 +445,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh-fixtures", action="store_true")
     p.add_argument("--refresh-ratings", action="store_true")
     p.add_argument("--refresh-stats", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
 
     p = sub.add_parser("build-current-international-slate")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -453,6 +462,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh-fixtures", action="store_true")
     p.add_argument("--refresh-ratings", action="store_true")
     p.add_argument("--refresh-stats", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
 
     p = sub.add_parser("project-current-international")
     p.add_argument("--no-network", action="store_true", default=True)
@@ -477,6 +490,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date-from")
     p.add_argument("--date-to")
     p.add_argument("--include-past", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
 
     p = sub.add_parser("seed-current-international-cache")
     p.add_argument("--as-of-date", required=True)
@@ -492,6 +509,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-sources", type=int)
     p.add_argument("--max-matches", type=int)
     p.add_argument("--strict", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
 
     p = sub.add_parser("projection-results-checkpoint")
     p.add_argument("--as-of-date", default=date.today().isoformat())
@@ -512,6 +533,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--date-from")
     p.add_argument("--date-to")
     p.add_argument("--include-past", action="store_true")
+    p.add_argument("--dedupe-fixtures", dest="dedupe_fixtures", action="store_true", default=True)
+    p.add_argument("--no-dedupe-fixtures", dest="dedupe_fixtures", action="store_false")
+    p.add_argument("--dedupe-review-threshold", type=float, default=0.75)
+    p.add_argument("--source-priority-mode", choices=["balanced", "prefer_espn", "prefer_openfootball"], default="balanced")
+
+    p = sub.add_parser("calibrate-baseline-projections")
+    p.add_argument("--as-of-date", default=date.today().isoformat())
+    p.add_argument("--data-source", choices=["international_historical", "club_historical", "current_international_results"], default="international_historical")
+    p.add_argument("--min-rows", type=int, default=50)
+    p.add_argument("--allow-diagnostic-leakage", action="store_true")
+    p.add_argument("--output-dir", default="outputs/calibration")
+    p.add_argument("--max-rows", type=int)
 
     return parser
 
@@ -986,6 +1019,9 @@ def main(argv: list[str] | None = None) -> None:
             refresh_fixtures=args.refresh_fixtures,
             refresh_ratings=args.refresh_ratings,
             refresh_stats=args.refresh_stats,
+            dedupe_fixtures=args.dedupe_fixtures,
+            dedupe_review_threshold=args.dedupe_review_threshold,
+            source_priority_mode=args.source_priority_mode,
         )
         counts = result["manifest"]["source_status_counts"]
         print(f"Current international source audit summary: {result['source_summary_path']}")
@@ -1011,6 +1047,9 @@ def main(argv: list[str] | None = None) -> None:
             refresh_fixtures=args.refresh_fixtures,
             refresh_ratings=args.refresh_ratings,
             refresh_stats=args.refresh_stats,
+            dedupe_fixtures=args.dedupe_fixtures,
+            dedupe_review_threshold=args.dedupe_review_threshold,
+            source_priority_mode=args.source_priority_mode,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -1039,6 +1078,9 @@ def main(argv: list[str] | None = None) -> None:
             date_from=args.date_from,
             date_to=args.date_to,
             include_past=args.include_past,
+            dedupe_fixtures=args.dedupe_fixtures,
+            dedupe_review_threshold=args.dedupe_review_threshold,
+            source_priority_mode=args.source_priority_mode,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -1067,6 +1109,9 @@ def main(argv: list[str] | None = None) -> None:
             max_sources=args.max_sources,
             max_matches=args.max_matches,
             strict=args.strict,
+            dedupe_fixtures=args.dedupe_fixtures,
+            dedupe_review_threshold=args.dedupe_review_threshold,
+            source_priority_mode=args.source_priority_mode,
         )
         print(f"Cache seed summary: {result['paths']['cache_seed_summary']}")
         print(f"Run dir: {result['run_dir']}")
@@ -1096,8 +1141,21 @@ def main(argv: list[str] | None = None) -> None:
             date_from=args.date_from,
             date_to=args.date_to,
             include_past=args.include_past,
+            dedupe_fixtures=args.dedupe_fixtures,
+            dedupe_review_threshold=args.dedupe_review_threshold,
+            source_priority_mode=args.source_priority_mode,
         )
         print(format_checkpoint_terminal(result))
+    elif args.command == "calibrate-baseline-projections":
+        result = calibrate_baseline_projections(
+            as_of_date=args.as_of_date,
+            data_source=args.data_source,
+            min_rows=args.min_rows,
+            allow_diagnostic_leakage=args.allow_diagnostic_leakage,
+            output_dir=args.output_dir,
+            max_rows=args.max_rows,
+        )
+        print(format_calibration_terminal(result))
     elif args.command == "diagnose-baselines":
         modes = [m for m in args.baseline_modes.split(",") if m.strip()]
         result = run_baseline_diagnostics(

@@ -17,6 +17,8 @@ outputs/projections/*
 !outputs/projections/.gitkeep
 outputs/reports/*
 !outputs/reports/.gitkeep
+outputs/calibration/*
+!outputs/calibration/.gitkeep
 outputs/runs/
 outputs/runs/*
 outputs/runs/**

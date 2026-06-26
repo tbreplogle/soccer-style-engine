@@ -121,6 +121,8 @@ def _artifact_links(run_date: str) -> str:
         ("Checkpoint manifest", f"../../../projection_checkpoints/{run_date}/projection_checkpoint_manifest.json"),
         ("Slate selection summary", f"../../../current_international/{run_date}/slate_selection/slate_selection_summary.md"),
         ("Selected fixtures CSV", f"../../../current_international/{run_date}/slate_selection/selected_fixtures.csv"),
+        ("Fixture deduplication summary", f"../../../current_international/{run_date}/fixture_deduplication/fixture_deduplication_summary.md"),
+        ("Duplicate fixtures CSV", f"../../../current_international/{run_date}/fixture_deduplication/duplicate_fixtures.csv"),
         ("Poisson summary", f"../../../projection_checkpoints/{run_date}/poisson/poisson_summary.md"),
         ("Match summary CSV", f"../../../projection_checkpoints/{run_date}/poisson/poisson_match_summary.csv"),
         ("1X2 CSV", f"../../../projection_checkpoints/{run_date}/poisson/poisson_1x2.csv"),
@@ -433,6 +435,8 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "current_international_projection_report.md",
             run_dir / "fixture_readiness" / "fixture_readiness_summary.md",
             run_dir / "slate_selection" / "slate_selection_summary.md",
+            run_dir / "fixture_deduplication" / "fixture_deduplication_summary.md",
+            run_dir / "baseline_calibration_summary.md",
             run_dir / "source_audit" / "source_audit_summary.md",
             run_dir / "cache_seed" / "cache_seed_summary.md",
         ] if path.exists()
@@ -456,6 +460,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         f"<div class=\"metric\"><span>Selected date range</span>{escape_html(entry.get('selected_date_range') or '')}</div>",
         f"<div class=\"metric\"><span>Selected fixtures</span>{escape_html(entry.get('selected_fixture_count') or '')}</div>",
         f"<div class=\"metric\"><span>Skipped past / future / unresolved</span>{escape_html(entry.get('skipped_past_fixtures') or '')} / {escape_html(entry.get('skipped_future_outside_window_fixtures') or '')} / {escape_html(entry.get('skipped_unresolved_fixtures') or '')}</div>",
+        f"<div class=\"metric\"><span>Dedupe before / after</span>{escape_html(entry.get('fixture_rows_before_dedupe') or '')} / {escape_html(entry.get('fixture_rows_after_dedupe') or '')}</div>",
+        f"<div class=\"metric\"><span>Duplicates skipped / review</span>{escape_html(entry.get('duplicate_rows_skipped') or '')} / {escape_html(entry.get('possible_duplicate_review_rows') or '')}</div>",
+        f"<div class=\"metric\"><span>Calibration</span>{escape_html(entry.get('calibration_status') or '')}</div>",
+        f"<div class=\"metric\"><span>WDL log loss / Brier</span>{escape_html(entry.get('wdl_log_loss') or '')} / {escape_html(entry.get('brier_score') or '')}</div>",
         f"<div class=\"metric\"><span>Warnings</span>{escape_html(entry.get('warnings_count'))}</div>",
         f"<div class=\"metric\"><span>Slate type</span>{escape_html(entry.get('slate_type'))}</div>",
         "</section>",
@@ -490,6 +498,16 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             "<div class=\"notice warning\"><strong>All-resolved slate mode is active.</strong> "
             "This is review coverage, not a current-date slate.</div>"
         )
+    if int(entry.get("possible_duplicate_review_rows") or 0) > 0:
+        sections.append(
+            "<div class=\"notice warning\"><strong>Possible duplicate fixtures need review.</strong> "
+            "<a href=\"#fixture-deduplication\">Open fixture deduplication outputs below.</a></div>"
+        )
+    if str(entry.get("entry_type") or "") == "baseline_calibration" and str(entry.get("status") or "").startswith(("blocked", "diagnostic")):
+        sections.append(
+            "<div class=\"notice warning\"><strong>Calibration is not a production-valid model claim.</strong> "
+            "Review leakage and blocked-status notes below.</div>"
+        )
     for title, filename in [
         ("Club Slate", "club_slate_projections.csv"),
         ("International Slate", "international_slate_projections.csv"),
@@ -511,6 +529,14 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Slate Skipped By Date", "slate_selection/skipped_by_date_fixtures.csv"),
         ("Slate Skipped Unresolved", "slate_selection/skipped_unresolved_fixtures.csv"),
         ("All Resolved Fixtures", "slate_selection/all_resolved_fixtures.csv"),
+        ("Deduplicated Fixtures", "fixture_deduplication/deduplicated_fixtures.csv"),
+        ("Duplicate Fixtures", "fixture_deduplication/duplicate_fixtures.csv"),
+        ("Possible Duplicate Review", "fixture_deduplication/possible_duplicate_review.csv"),
+        ("Source Priority Summary", "fixture_deduplication/source_priority_summary.csv"),
+        ("WDL Calibration", "wdl_calibration.csv"),
+        ("Totals Calibration", "totals_calibration.csv"),
+        ("Probability Buckets", "probability_buckets.csv"),
+        ("Scoreline Calibration", "scoreline_calibration.csv"),
         ("Fixture Seed Results", "cache_seed/fixture_seed_results.csv"),
         ("Rating Seed Results", "cache_seed/rating_seed_results.csv"),
         ("Stat Seed Results", "cache_seed/stat_seed_results.csv"),
@@ -524,7 +550,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
     ]:
         path = run_dir / filename
         if path.exists():
-            heading_id = " id=\"fixture-readiness\"" if title == "Resolved Fixtures" else ""
+            heading_id = " id=\"fixture-readiness\"" if title == "Resolved Fixtures" else " id=\"fixture-deduplication\"" if title == "Deduplicated Fixtures" else ""
             sections.append(f"<h2{heading_id}>{escape_html(title)}</h2>")
             sections.append(csv_to_html_table(path))
     for path in markdown_paths:
@@ -556,6 +582,10 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         "slate window",
         "selected fixtures",
         "selected range",
+        "dedupe",
+        "calibration",
+        "log loss",
+        "brier",
         "skipped placeholders",
         "poisson matches",
         "warnings",
@@ -590,6 +620,10 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         rows.append(f"<td>{escape_html(entry.get('slate_window') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('selected_fixture_count') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('selected_date_range') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('duplicate_rows_skipped') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('calibration_status') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('wdl_log_loss') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('brier_score') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('skipped_placeholder_rows') or '')}</td>")
         rows.append(f"<td>{escape_html(poisson_match_count or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('warnings_count'))}</td>")

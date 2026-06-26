@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from src.international_current.fixture_deduplication import deduplicate_fixtures, write_fixture_deduplication_outputs
 from src.international_current.sources.eloratings_connector import seed_eloratings
 from src.international_current.sources.espn_connector import seed_espn_fixtures
 from src.international_current.sources.fbref_connector import seed_fbref_fixtures, seed_fbref_stats
@@ -131,6 +132,9 @@ def seed_current_international_cache(
     local_fixture_paths: dict[str, list[str | Path]] | None = None,
     local_rating_paths: dict[str, list[str | Path]] | None = None,
     local_stat_paths: dict[str, list[str | Path]] | None = None,
+    dedupe_fixtures: bool = True,
+    dedupe_review_threshold: float = 0.75,
+    source_priority_mode: str = "balanced",
 ) -> dict[str, Any]:
     if seed_all or not any([seed_fixtures, seed_ratings, seed_stats]):
         seed_fixtures = seed_ratings = seed_stats = True
@@ -170,6 +174,13 @@ def seed_current_international_cache(
     fixtures = _concat(fixture_frames, _empty_fixture_frame())
     if max_matches is not None and not fixtures.empty:
         fixtures = fixtures.head(max_matches)
+    dedupe_result = deduplicate_fixtures(
+        fixtures,
+        enabled=dedupe_fixtures,
+        review_threshold=dedupe_review_threshold,
+        source_priority_mode=source_priority_mode,
+    )
+    dedupe_paths = write_fixture_deduplication_outputs(run_dir=Path(output_dir) / as_of_date, dedupe_result=dedupe_result)
     ratings = _concat(rating_frames, _empty_rating_frame())
     stats = _concat(stat_frames, _empty_stat_frame())
     fetch_results = pd.concat([
@@ -215,7 +226,7 @@ def seed_current_international_cache(
     )), encoding="utf-8")
     return {
         "run_dir": run_dir,
-        "paths": {key: str(value) for key, value in paths.items()},
+        "paths": {**{key: str(value) for key, value in paths.items()}, **dedupe_paths},
         "cache_paths": {
             "fixtures": str(fixture_cache_path),
             "ratings": str(rating_cache_path),
@@ -225,5 +236,6 @@ def seed_current_international_cache(
         "ratings": ratings,
         "stats": stats,
         "fetch_results": fetch_results,
+        "fixture_deduplication": dedupe_result,
         "strict_status": "pass" if not strict or (len(fixtures) > 0 and len(ratings) > 0) else "fail",
     }

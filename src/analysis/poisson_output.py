@@ -189,6 +189,10 @@ def build_poisson_board_for_match(
         "slate_window": meta.get("slate_window", ""),
         "slate_window_status": meta.get("slate_window_status", ""),
         "selected_by_slate_filter": meta.get("selected_by_slate_filter", ""),
+        "deduplication_status": meta.get("deduplication_status", ""),
+        "primary_source": meta.get("primary_source", ""),
+        "duplicate_sources": meta.get("duplicate_sources", ""),
+        "source_priority_score": meta.get("source_priority_score", ""),
         "data_support_level": meta.get("data_support_level", ""),
         "confidence_label": meta.get("confidence_label", ""),
         "style_inputs_available": meta.get("style_inputs_available", False),
@@ -252,6 +256,10 @@ def build_poisson_boards(rows: pd.DataFrame, max_goals: int = 6) -> dict[str, pd
                 "slate_window": row.get("slate_window", ""),
                 "slate_window_status": row.get("slate_window_status", ""),
                 "selected_by_slate_filter": row.get("selected_by_slate_filter", ""),
+                "deduplication_status": row.get("deduplication_status", ""),
+                "primary_source": row.get("primary_source", ""),
+                "duplicate_sources": row.get("duplicate_sources", ""),
+                "source_priority_score": row.get("source_priority_score", ""),
             },
         )
         for name, frame in board.items():

@@ -24,6 +24,10 @@ from src.international_current.fixture_resolution import (
     classify_fixture,
     write_fixture_readiness_outputs,
 )
+from src.international_current.fixture_deduplication import (
+    deduplicate_fixtures,
+    write_fixture_deduplication_outputs,
+)
 from src.international_current.rating_harvest import harvest_current_international_ratings
 from src.international_current.rating_projection import project_from_fixture_and_ratings
 from src.international_current.slate_selection import (
@@ -78,6 +82,15 @@ SLATE_COLUMNS = [
     "slate_skip_reason",
     "slate_window",
     "selected_by_slate_filter",
+    "fixture_key",
+    "deduplication_status",
+    "duplicate_group_id",
+    "primary_source",
+    "duplicate_sources",
+    "dedupe_reason",
+    "dedupe_confidence",
+    "source_priority_score",
+    "source_priority_reason",
 ]
 
 PROJECTION_COLUMNS = [
@@ -152,6 +165,11 @@ PROJECTION_COLUMNS = [
     "slate_skip_reason",
     "slate_window",
     "selected_by_slate_filter",
+    "fixture_key",
+    "deduplication_status",
+    "primary_source",
+    "duplicate_sources",
+    "source_priority_score",
 ]
 
 
@@ -366,6 +384,15 @@ def _fixture_to_slate_row(
         slate_skip_reason="",
         slate_window="",
         selected_by_slate_filter=False,
+        fixture_key="",
+        deduplication_status="unique",
+        duplicate_group_id="",
+        primary_source=fixture.source_name,
+        duplicate_sources="",
+        dedupe_reason="",
+        dedupe_confidence=0.0,
+        source_priority_score=0.0,
+        source_priority_reason="",
     )
 
 
@@ -444,6 +471,9 @@ def audit_current_international_sources(
     refresh_fixtures: bool = False,
     refresh_ratings: bool = False,
     refresh_stats: bool = False,
+    dedupe_fixtures: bool = True,
+    dedupe_review_threshold: float = 0.75,
+    source_priority_mode: str = "balanced",
 ) -> dict[str, Any]:
     fixture_harvest = harvest_current_international_fixtures(
         as_of_date=as_of_date or date.today().isoformat(),
@@ -550,6 +580,9 @@ def audit_current_international_sources(
             "proxy_adjustments_enabled": False,
             "betting_recommendations": False,
         },
+        "dedupe_fixtures": dedupe_fixtures,
+        "dedupe_review_threshold": dedupe_review_threshold,
+        "source_priority_mode": source_priority_mode,
         "output_paths": {"source_summary": str(summary_path), **coverage["paths"]},
         "warnings": [] if fixtures else [NO_REAL_FIXTURE_WARNING],
     }
@@ -584,6 +617,9 @@ def build_current_international_slate(
     refresh_fixtures: bool = False,
     refresh_ratings: bool = False,
     refresh_stats: bool = False,
+    dedupe_fixtures: bool = True,
+    dedupe_review_threshold: float = 0.75,
+    source_priority_mode: str = "balanced",
 ) -> dict[str, Any]:
     audit = audit_current_international_sources(
         as_of_date=as_of_date,
@@ -634,18 +670,36 @@ def build_current_international_slate(
         frame["missing_data_summary"] = missing
         frame["source_audit_status"] = audit["manifest"]["world_cup_readiness_status"]
     run_dir = audit["run_dir"]
+    dedupe_result = deduplicate_fixtures(
+        frame,
+        enabled=dedupe_fixtures,
+        review_threshold=dedupe_review_threshold,
+        source_priority_mode=source_priority_mode,
+    )
+    dedupe_paths = write_fixture_deduplication_outputs(run_dir=run_dir, dedupe_result=dedupe_result)
+    frame = dedupe_result["deduplicated"]
     slate_path = run_dir / "current_international_slate.csv"
     slate_path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(slate_path, index=False)
     manifest = dict(audit["manifest"])
     manifest["slate_rows"] = len(frame)
+    manifest.update(dedupe_result["summary"])
+    manifest["dedupe_fixtures"] = dedupe_fixtures
+    manifest["dedupe_review_threshold"] = dedupe_review_threshold
+    manifest["source_priority_mode"] = source_priority_mode
     manifest.update(readiness["summary"])
     manifest["output_paths"] = {
         **manifest["output_paths"],
         "slate": str(slate_path),
         "manifest": str(run_dir / "current_international_manifest.json"),
         **readiness["paths"],
+        **dedupe_paths,
     }
+    if dedupe_result["summary"]["possible_duplicate_review_rows"]:
+        manifest["warnings"] = list(dict.fromkeys([
+            *manifest.get("warnings", []),
+            "Possible neutral-site duplicate fixtures need review before relying on slate counts.",
+        ]))
     if readiness["summary"]["skipped_placeholder_rows"]:
         manifest["warnings"] = list(dict.fromkeys([*manifest.get("warnings", []), PLACEHOLDER_SKIP_WARNING]))
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
@@ -655,6 +709,8 @@ def build_current_international_slate(
         "slate_path": slate_path,
         "fixture_readiness": readiness["frame"],
         "fixture_readiness_paths": readiness["paths"],
+        "fixture_deduplication": dedupe_result,
+        "fixture_deduplication_paths": dedupe_paths,
         "manifest_path": manifest_path,
         "manifest": manifest,
     }
@@ -704,6 +760,8 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
         "fixture_date",
         "fixture_temporal_status",
         "slate_window_status",
+        "deduplication_status",
+        "primary_source",
     ]
     lines.extend(_markdown_table(projections[summary_cols] if not projections.empty else projections))
     lines.extend(["", "## Current Slate Inputs", ""])
@@ -720,6 +778,9 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
         "selected_by_slate_filter",
         "slate_window_status",
         "slate_skip_reason",
+        "deduplication_status",
+        "primary_source",
+        "duplicate_sources",
         "data_mode",
         "data_support_level",
         "warnings",
@@ -752,6 +813,9 @@ def project_current_international(
     date_from: str | None = None,
     date_to: str | None = None,
     include_past: bool = False,
+    dedupe_fixtures: bool = True,
+    dedupe_review_threshold: float = 0.75,
+    source_priority_mode: str = "balanced",
 ) -> dict[str, Any]:
     slate_result = build_current_international_slate(
         as_of_date=as_of_date,
@@ -764,6 +828,9 @@ def project_current_international(
         refresh_fixtures=refresh_fixtures,
         refresh_ratings=refresh_ratings,
         refresh_stats=refresh_stats,
+        dedupe_fixtures=dedupe_fixtures,
+        dedupe_review_threshold=dedupe_review_threshold,
+        source_priority_mode=source_priority_mode,
     )
     full_slate = slate_result["slate"].copy()
     slate_selection = apply_slate_selection(
@@ -898,6 +965,11 @@ def project_current_international(
             "slate_skip_reason": matchup.get("slate_skip_reason", ""),
             "slate_window": matchup.get("slate_window", ""),
             "selected_by_slate_filter": matchup.get("selected_by_slate_filter", False),
+            "fixture_key": matchup.get("fixture_key", ""),
+            "deduplication_status": matchup.get("deduplication_status", ""),
+            "primary_source": matchup.get("primary_source", matchup.get("source_fixture_name", "")),
+            "duplicate_sources": matchup.get("duplicate_sources", ""),
+            "source_priority_score": matchup.get("source_priority_score", 0),
         })
         rows.append(row)
     projections = pd.DataFrame(rows, columns=PROJECTION_COLUMNS)

@@ -222,6 +222,11 @@ def normalize_projection_rows(frame: pd.DataFrame) -> pd.DataFrame:
             "slate_skip_reason": _first_value(row, ["slate_skip_reason"], ""),
             "slate_window": _first_value(row, ["slate_window"], ""),
             "selected_by_slate_filter": _to_bool(_first_value(row, ["selected_by_slate_filter"], False)),
+            "fixture_key": _first_value(row, ["fixture_key"], ""),
+            "deduplication_status": _first_value(row, ["deduplication_status"], ""),
+            "primary_source": _first_value(row, ["primary_source", "source_fixture_name"], ""),
+            "duplicate_sources": _first_value(row, ["duplicate_sources"], ""),
+            "source_priority_score": _to_float(_first_value(row, ["source_priority_score"], "")),
             "warnings_text": warnings_text,
         })
     return pd.DataFrame(rows)
@@ -502,6 +507,9 @@ def run_projection_checkpoint(
     date_from: str | None = None,
     date_to: str | None = None,
     include_past: bool = False,
+    dedupe_fixtures: bool = True,
+    dedupe_review_threshold: float = 0.75,
+    source_priority_mode: str = "balanced",
 ) -> dict[str, Any]:
     run_date = _run_date(as_of_date)
     source_path: Path | None = Path(projection_file) if projection_file else None
@@ -524,6 +532,9 @@ def run_projection_checkpoint(
             date_from=date_from,
             date_to=date_to,
             include_past=include_past,
+            dedupe_fixtures=dedupe_fixtures,
+            dedupe_review_threshold=dedupe_review_threshold,
+            source_priority_mode=source_priority_mode,
         )
         source_path = Path(current_projection_result["projections_path"])
     elif source_path is None:
@@ -590,6 +601,9 @@ def run_projection_checkpoint(
         "date_from": date_from or "",
         "date_to": date_to or "",
         "include_past": include_past,
+        "dedupe_fixtures": dedupe_fixtures,
+        "dedupe_review_threshold": dedupe_review_threshold,
+        "source_priority_mode": source_priority_mode,
         "build_poisson_board": bool(poisson_result),
         "max_goals": max_goals,
         "rows_reviewed": summary["rows_reviewed"],
@@ -616,6 +630,21 @@ def run_projection_checkpoint(
         ),
         "current_projection_slate_selection": (
             current_projection_result.get("manifest", {}).get("slate_selection", {})
+            if current_projection_result
+            else {}
+        ),
+        "current_projection_deduplication": (
+            {
+                key: current_projection_result.get("manifest", {}).get(key)
+                for key in [
+                    "fixture_rows_before_dedupe",
+                    "fixture_rows_after_dedupe",
+                    "duplicate_rows_skipped",
+                    "possible_duplicate_review_rows",
+                    "selected_primary_source_counts",
+                    "duplicates_by_source_pair",
+                ]
+            }
             if current_projection_result
             else {}
         ),

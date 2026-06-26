@@ -53,6 +53,11 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "slate_selection/skipped_by_date_fixtures.csv",
     "slate_selection/skipped_unresolved_fixtures.csv",
     "slate_selection/all_resolved_fixtures.csv",
+    "fixture_deduplication/fixture_deduplication_summary.md",
+    "fixture_deduplication/deduplicated_fixtures.csv",
+    "fixture_deduplication/duplicate_fixtures.csv",
+    "fixture_deduplication/possible_duplicate_review.csv",
+    "fixture_deduplication/source_priority_summary.csv",
     "cache_seed/cache_seed_summary.md",
     "cache_seed/fixture_seed_results.csv",
     "cache_seed/rating_seed_results.csv",
@@ -62,6 +67,15 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "cache_seed/parsed_fixture_rows.csv",
     "cache_seed/parsed_rating_rows.csv",
     "cache_seed/parsed_stat_rows.csv",
+)
+
+CALIBRATION_OUTPUT_NAMES = (
+    "calibration_manifest.json",
+    "baseline_calibration_summary.md",
+    "wdl_calibration.csv",
+    "totals_calibration.csv",
+    "probability_buckets.csv",
+    "scoreline_calibration.csv",
 )
 
 
@@ -137,6 +151,8 @@ def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, An
     present = [name for name in CHECKPOINT_OUTPUT_NAMES if (checkpoint_dir / name).exists()]
     warnings_count = int(manifest.get("warning_count") or 0)
     slate_selection = manifest.get("current_projection_slate_selection") or {}
+    current_paths = manifest.get("current_projection_output_paths") or {}
+    dedupe = manifest.get("current_projection_deduplication") or {}
     return {
         "entry_type": "projection_checkpoint",
         "run_date": str(manifest.get("run_date") or checkpoint_dir.name),
@@ -160,6 +176,10 @@ def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, An
         "skipped_future_outside_window_fixtures": int(slate_selection.get("skipped_future_outside_window_fixtures") or 0),
         "skipped_unresolved_fixtures": int(slate_selection.get("skipped_unresolved_fixtures") or 0),
         "default_used_next_upcoming": bool(slate_selection.get("default_used_next_upcoming")),
+        "fixture_rows_before_dedupe": int(dedupe.get("fixture_rows_before_dedupe") or 0),
+        "fixture_rows_after_dedupe": int(dedupe.get("fixture_rows_after_dedupe") or 0),
+        "duplicate_rows_skipped": int(dedupe.get("duplicate_rows_skipped") or 0),
+        "possible_duplicate_review_rows": int(dedupe.get("possible_duplicate_review_rows") or 0),
         "warnings_count": warnings_count,
         "warnings": [f"{warnings_count} projection checkpoint warning flags"] if warnings_count else [],
         "output_files_present": present,
@@ -168,6 +188,7 @@ def _checkpoint_entry(checkpoint_dir: Path, manifest_path: Path) -> dict[str, An
         "run_dir": str(checkpoint_dir),
         "error": "",
         "source_projection_file": str(manifest.get("source_projection_file") or ""),
+        "current_projection_output_paths": current_paths,
     }
 
 
@@ -220,11 +241,56 @@ def _current_international_entry(run_dir: Path, manifest_path: Path) -> dict[str
         "skipped_future_outside_window_fixtures": int(manifest.get("skipped_future_outside_window_fixtures") or 0),
         "skipped_unresolved_fixtures": int(manifest.get("skipped_unresolved_fixtures") or 0),
         "default_used_next_upcoming": bool((manifest.get("slate_selection") or {}).get("default_used_next_upcoming")),
+        "fixture_rows_before_dedupe": int(manifest.get("fixture_rows_before_dedupe") or 0),
+        "fixture_rows_after_dedupe": int(manifest.get("fixture_rows_after_dedupe") or 0),
+        "duplicate_rows_skipped": int(manifest.get("duplicate_rows_skipped") or 0),
+        "possible_duplicate_review_rows": int(manifest.get("possible_duplicate_review_rows") or 0),
         "warnings_count": len(manifest.get("warnings") or []) + len(manifest.get("strict_real_data_warnings") or []),
         "warnings": list(manifest.get("warnings") or []) + list(manifest.get("strict_real_data_warnings") or []),
         "output_files_present": present,
         "manifest_path": str(manifest_path),
         "summary_path": str(run_dir / "source_audit" / "source_audit_summary.md") if (run_dir / "source_audit" / "source_audit_summary.md").exists() else "",
+        "run_dir": str(run_dir),
+        "error": "",
+    }
+
+
+def _calibration_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(run_dir, "malformed_calibration_manifest")
+        entry["entry_type"] = "baseline_calibration"
+        entry["status"] = "malformed_calibration_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+    metrics = manifest.get("metrics") or {}
+    warnings = []
+    if str(manifest.get("calibration_status", "")).startswith("blocked") or manifest.get("calibration_status") == "diagnostic_only":
+        warnings.append(f"Calibration status is {manifest.get('calibration_status')}")
+    present = [name for name in CALIBRATION_OUTPUT_NAMES if (run_dir / name).exists()]
+    return {
+        "entry_type": "baseline_calibration",
+        "run_date": str(manifest.get("run_date") or run_dir.name),
+        "run_id": str(manifest.get("run_id") or f"baseline_calibration_{run_dir.name}"),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("calibration_status") or "unknown"),
+        "currentness_status": "calibration",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": int(metrics.get("row_count") or 0),
+        "calibration_status": str(manifest.get("calibration_status") or ""),
+        "calibration_data_source": str(manifest.get("data_source") or ""),
+        "wdl_log_loss": metrics.get("wdl_log_loss"),
+        "brier_score": metrics.get("brier_score"),
+        "ou25_brier_score": metrics.get("over_under_2_5_brier_score"),
+        "most_likely_score_hit_rate": metrics.get("most_likely_score_hit_rate"),
+        "warnings_count": len(warnings),
+        "warnings": warnings,
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(run_dir / "baseline_calibration_summary.md") if (run_dir / "baseline_calibration_summary.md").exists() else "",
         "run_dir": str(run_dir),
         "error": "",
     }
@@ -266,6 +332,17 @@ def _iter_current_international_entries(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if not root.exists() or not root.is_dir():
+        return entries
+    for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
+        manifest_path = run_dir / "calibration_manifest.json"
+        if manifest_path.exists():
+            entries.append(_calibration_entry(run_dir, manifest_path))
+    return entries
+
+
 def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, Any]]:
     root = Path(runs_root)
     if not root.exists() or not root.is_dir():
@@ -277,6 +354,8 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
     elif (
         (root / "projection_checkpoints").exists()
         or (root / "current_international").exists()
+        or (root / "calibration").exists()
+        or root.name == "calibration"
     ) and root.name != "runs":
         run_roots = []
     for run_root in run_roots:
@@ -287,6 +366,8 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
     entries.extend(_iter_checkpoint_entries(checkpoint_root))
     current_international_root = root if root.name == "current_international" else root / "current_international"
     entries.extend(_iter_current_international_entries(current_international_root))
+    calibration_root = root if root.name == "calibration" else root / "calibration"
+    entries.extend(_iter_calibration_entries(calibration_root))
     return sorted(entries, key=lambda item: (item.get("run_date", ""), item.get("generated_at", "")), reverse=True)
 
 
