@@ -76,3 +76,9 @@ This prevents one calibration run from overwriting another. The date folder keep
 Baseline tuning remains diagnostic-only. It can compare conservative rating-baseline parameter candidates and write a `candidate_model_config.json` for preview, but it does not change production defaults. Candidate preview output compares baseline versus candidate xG/probabilities under `outputs/current_international/YYYY-MM-DD/candidate_preview/`.
 
 This is still not true style alignment. Ratings are strength priors, not event/tracking style evidence. Any future style layer must remain traceable to measurable style inputs and must beat the organized baseline on leakage-safe validation.
+
+## Phase 35 Scoreline And Totals Calibration
+
+Phase 35 adds scoreline and totals calibration before style-aware xG adjustments. This step checks whether the baseline xG distribution is too compressed around low exact-score cells, measures top 3/top 5 exact-score coverage, and writes diagnostic scoreline candidate previews under `outputs/current_international/YYYY-MM-DD/scoreline_candidate_preview/`.
+
+Style comes after baseline scoreline calibration because style adjustments need a stable baseline target. Free proxy metrics remain separate from true event/tracking style, and proxy/style adjustments remain disabled by default.

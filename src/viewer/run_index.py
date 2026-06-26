@@ -71,6 +71,8 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "cache_seed/parsed_stat_rows.csv",
     "candidate_preview/candidate_projection_comparison.csv",
     "candidate_preview/candidate_projection_comparison_summary.md",
+    "scoreline_candidate_preview/candidate_projection_comparison.csv",
+    "scoreline_candidate_preview/candidate_projection_comparison_summary.md",
 )
 
 CALIBRATION_OUTPUT_NAMES = (
@@ -88,6 +90,23 @@ CALIBRATION_OUTPUT_NAMES = (
     "baseline_tuning/train_metrics.csv",
     "baseline_tuning/holdout_metrics.csv",
     "baseline_tuning/tuning_holdout_summary.md",
+)
+
+SCORELINE_DIAGNOSTIC_OUTPUT_NAMES = (
+    "scoreline_diagnostics_summary.md",
+    "scoreline_metrics.csv",
+    "scoreline_topk_metrics.csv",
+    "team_goal_band_calibration.csv",
+    "total_goal_band_calibration.csv",
+    "actual_score_rankings.csv",
+    "scoreline_diagnostics_manifest.json",
+)
+
+GRADING_OUTPUT_NAMES = (
+    "current_projection_grading_summary.md",
+    "graded_matches.csv",
+    "scoreline_miss_types.csv",
+    "result_grading_manifest.json",
 )
 
 HISTORICAL_SEED_OUTPUT_NAMES = (
@@ -400,6 +419,87 @@ def _club_readiness_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     }
 
 
+def _grading_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(run_dir, "malformed_grading_manifest")
+        entry["entry_type"] = "current_result_grading"
+        entry["status"] = "malformed_grading_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+    metrics = manifest.get("metrics") or {}
+    present = [name for name in GRADING_OUTPUT_NAMES if (run_dir / name).exists()]
+    return {
+        "entry_type": "current_result_grading",
+        "run_date": str(manifest.get("run_date") or run_dir.parent.name),
+        "run_id": str(manifest.get("run_id") or run_dir.name),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("status") or "unknown"),
+        "currentness_status": "result_grading",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": int(metrics.get("graded_matches") or 0),
+        "graded_matches": int(metrics.get("graded_matches") or 0),
+        "exact_score_hit_rate": metrics.get("exact_score_hit_rate"),
+        "top_3_score_hit_rate": metrics.get("top_3_score_hit_rate"),
+        "top_5_score_hit_rate": metrics.get("top_5_score_hit_rate"),
+        "actual_score_rank_average": metrics.get("actual_score_rank_average"),
+        "total_goals_mae": metrics.get("total_goals_mae"),
+        "ou25_brier_score": metrics.get("over_2_5_brier_score"),
+        "btts_brier_score": metrics.get("btts_brier_score"),
+        "warnings_count": 1 if manifest.get("warning") else 0,
+        "warnings": [manifest["warning"]] if manifest.get("warning") else [],
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(run_dir / "current_projection_grading_summary.md") if (run_dir / "current_projection_grading_summary.md").exists() else "",
+        "run_dir": str(run_dir),
+        "error": "",
+        "slate_type": "current_result_grading",
+    }
+
+
+def _scoreline_diagnostics_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        entry = _empty_entry(run_dir, "malformed_scoreline_diagnostics_manifest")
+        entry["entry_type"] = "scoreline_diagnostics"
+        entry["status"] = "malformed_scoreline_diagnostics_manifest"
+        entry["manifest_path"] = str(manifest_path)
+        entry["error"] = str(exc)
+        return entry
+    metrics = manifest.get("metrics") or {}
+    present = [name for name in SCORELINE_DIAGNOSTIC_OUTPUT_NAMES if (run_dir / name).exists()]
+    return {
+        "entry_type": "scoreline_diagnostics",
+        "run_date": str(manifest.get("run_date") or run_dir.parent.parent.name),
+        "run_id": str(manifest.get("run_id") or run_dir.name),
+        "generated_at": str(manifest.get("generated_at") or ""),
+        "status": str(manifest.get("status") or "diagnostic_only"),
+        "currentness_status": "scoreline_diagnostics",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": int(metrics.get("row_count") or 0),
+        "exact_score_hit_rate": metrics.get("actual_score_hit_rate"),
+        "top_3_score_hit_rate": metrics.get("top_3_correct_score_hit_rate"),
+        "top_5_score_hit_rate": metrics.get("top_5_correct_score_hit_rate"),
+        "actual_score_rank_average": metrics.get("actual_score_rank_average"),
+        "total_goals_mae": metrics.get("total_goals_mae"),
+        "ou25_brier_score": metrics.get("over_under_2_5_brier_score"),
+        "btts_brier_score": metrics.get("btts_brier_score"),
+        "warnings_count": 1 if "insufficient_rows" in (manifest.get("diagnostic_labels") or []) else 0,
+        "warnings": list(manifest.get("diagnostic_labels") or []),
+        "output_files_present": present,
+        "manifest_path": str(manifest_path),
+        "summary_path": str(run_dir / "scoreline_diagnostics_summary.md") if (run_dir / "scoreline_diagnostics_summary.md").exists() else "",
+        "run_dir": str(run_dir),
+        "error": "",
+        "slate_type": "scoreline_diagnostics",
+    }
+
+
 def _iter_run_entries(root: Path) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for run_dir in sorted((path for path in root.iterdir() if path.is_dir()), key=lambda p: p.name, reverse=True):
@@ -446,6 +546,8 @@ def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
         seed_manifest = run_dir / "historical_seed" / "historical_seed_manifest.json"
         if seed_manifest.exists():
             entries.append(_historical_seed_entry(run_dir / "historical_seed", seed_manifest))
+    for manifest_path in sorted(root.glob("*/scoreline_diagnostics/*/scoreline_diagnostics_manifest.json"), key=lambda p: str(p), reverse=True):
+        entries.append(_scoreline_diagnostics_entry(manifest_path.parent, manifest_path))
     return entries
 
 
@@ -455,6 +557,15 @@ def _iter_club_readiness_entries(root: Path) -> list[dict[str, Any]]:
         return entries
     for manifest_path in sorted(root.glob("*/league_readiness/league_readiness_manifest.json"), key=lambda p: str(p), reverse=True):
         entries.append(_club_readiness_entry(manifest_path.parent, manifest_path))
+    return entries
+
+
+def _iter_grading_entries(root: Path) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if not root.exists() or not root.is_dir():
+        return entries
+    for manifest_path in sorted(root.glob("*/*/result_grading_manifest.json"), key=lambda p: str(p), reverse=True):
+        entries.append(_grading_entry(manifest_path.parent, manifest_path))
     return entries
 
 
@@ -471,8 +582,10 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
         or (root / "current_international").exists()
         or (root / "calibration").exists()
         or (root / "club").exists()
+        or (root / "grading").exists()
         or root.name == "calibration"
         or root.name == "club"
+        or root.name == "grading"
     ) and root.name != "runs":
         run_roots = []
     for run_root in run_roots:
@@ -487,6 +600,8 @@ def build_run_index(runs_root: str | Path = "outputs/runs") -> list[dict[str, An
     entries.extend(_iter_calibration_entries(calibration_root))
     club_root = root if root.name == "club" else root / "club"
     entries.extend(_iter_club_readiness_entries(club_root))
+    grading_root = root if root.name == "grading" else root / "grading"
+    entries.extend(_iter_grading_entries(grading_root))
     return sorted(entries, key=lambda item: (item.get("run_date", ""), item.get("generated_at", "")), reverse=True)
 
 

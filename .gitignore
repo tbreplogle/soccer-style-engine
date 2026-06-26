@@ -40,6 +40,9 @@ outputs/current_international/**
 outputs/club/
 outputs/club/*
 outputs/club/**
+outputs/grading/
+outputs/grading/*
+outputs/grading/**
 outputs/projection_checkpoints/
 outputs/projection_checkpoints/*
 outputs/projection_checkpoints/**

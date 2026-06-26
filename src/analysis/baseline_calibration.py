@@ -14,6 +14,7 @@ from src.analysis.baseline_tuning import (
     project_rows_with_candidate,
     write_baseline_tuning_outputs,
 )
+from src.analysis.scoreline_calibration import write_scoreline_diagnostics
 from src.data_ingestion.multi_league_football_data import normalize_multi_season_football_data
 from src.models.score_projection import _projection_from_xg
 from src.international_current.current_international_schema import CurrentInternationalFixture, CurrentInternationalTeamRating
@@ -909,6 +910,13 @@ def _write_outputs(
         league_totals.to_csv(paths["league_totals_calibration"], index=False)
         season_summary.to_csv(paths["season_calibration_summary"], index=False)
         league_season_summary.to_csv(paths["league_season_calibration_summary"], index=False)
+    scoreline_diagnostics = write_scoreline_diagnostics(
+        result.get("rows", pd.DataFrame()),
+        as_of_date=as_of_date,
+        output_dir=output_dir,
+        run_id=run_context["run_id"],
+        min_rows=20,
+    )
     manifest = {
         "run_id": run_context["run_id"],
         "calibration_run_id": run_context["run_id"],
@@ -944,6 +952,13 @@ def _write_outputs(
         },
         "output_paths": {key: str(path) for key, path in paths.items()},
     }
+    manifest["scoreline_diagnostics"] = {
+        "status": scoreline_diagnostics["manifest"]["status"],
+        "diagnostic_labels": scoreline_diagnostics["manifest"]["diagnostic_labels"],
+        "metrics": scoreline_diagnostics["manifest"]["metrics"],
+        "paths": scoreline_diagnostics["paths"],
+    }
+    manifest["output_paths"].update({f"scoreline_diagnostics_{key}": value for key, value in scoreline_diagnostics["paths"].items()})
     if run_tuning:
         tuning = write_baseline_tuning_outputs(
             result.get("rows", pd.DataFrame()),

@@ -12,6 +12,7 @@ from src.agents.matchup_intelligence_agent import analyze_matchup
 from src.agents.team_identity_agent import classify_team_identity
 from src.analysis.projection_checkpoint import format_checkpoint_terminal, run_projection_checkpoint
 from src.analysis.baseline_calibration import calibrate_baseline_projections, format_calibration_terminal
+from src.analysis.current_result_grading import format_grading_terminal, grade_current_projections
 from src.club.league_readiness import check_league_readiness
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
@@ -559,6 +560,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--holdout-end-date")
     p.add_argument("--train-start-date")
     p.add_argument("--train-end-date")
+
+    p = sub.add_parser("grade-current-projections")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--projection-file")
+    p.add_argument("--poisson-dir")
+    p.add_argument("--actual-results")
+    p.add_argument("--allow-network", action="store_true")
+    p.add_argument("--source-cache-dir", default="data/source_cache/current_international")
+    p.add_argument("--output-dir", default="outputs/grading")
+    p.add_argument("--min-matches", type=int, default=1)
 
     p = sub.add_parser("check-league-readiness")
     p.add_argument("--as-of-date", required=True)
@@ -1209,6 +1220,18 @@ def main(argv: list[str] | None = None) -> None:
             train_end_date=args.train_end_date,
         )
         print(format_calibration_terminal(result))
+    elif args.command == "grade-current-projections":
+        result = grade_current_projections(
+            as_of_date=args.as_of_date,
+            projection_file=args.projection_file,
+            poisson_dir=args.poisson_dir,
+            actual_results=args.actual_results,
+            allow_network=args.allow_network,
+            source_cache_dir=args.source_cache_dir,
+            output_dir=args.output_dir,
+            min_matches=args.min_matches,
+        )
+        print(format_grading_terminal(result))
     elif args.command == "check-league-readiness":
         leagues = [league.strip() for league in args.leagues.split(",") if league.strip()]
         result = check_league_readiness(

@@ -154,7 +154,9 @@ def build_poisson_board_for_match(
     matrix = matrix.copy()
     matrix.insert(0, "away_team", away_team)
     matrix.insert(0, "home_team", home_team)
-    likely = matrix.sort_values("probability", ascending=False).iloc[0]
+    sorted_scores = matrix.sort_values("probability", ascending=False)
+    likely = sorted_scores.iloc[0]
+    top_5_scores = " | ".join(sorted_scores.head(5)["score_label"].astype(str).tolist())
     over_2_5 = float(totals.loc[totals["line"] == 2.5, "over_probability"].iloc[0])
     under_2_5 = float(totals.loc[totals["line"] == 2.5, "under_probability"].iloc[0])
     meta = metadata or {}
@@ -167,6 +169,7 @@ def build_poisson_board_for_match(
         "most_likely_score": likely["score_label"],
         "most_likely_score_probability": float(likely["probability"]),
         "most_likely_score_american_odds": likely["correct_score_american_odds"],
+        "top_5_correct_scores": top_5_scores,
         "home_win_probability": home_win,
         "draw_probability": draw,
         "away_win_probability": away_win,
@@ -319,6 +322,7 @@ def build_poisson_summary_markdown(tables: dict[str, pd.DataFrame]) -> str:
         "",
         "Poisson turns projected team xG into result, totals, BTTS, clean sheet, and correct-score probabilities.",
         "These are probability outputs and model-implied American odds, not recommendations.",
+        "Most likely exact score means the single highest-probability score cell. Exact scores are naturally low-probability outcomes.",
         "",
         "## Highlights",
         "",
@@ -326,11 +330,11 @@ def build_poisson_summary_markdown(tables: dict[str, pd.DataFrame]) -> str:
         f"- Highest home win probability: `{top_home['home_team']} vs {top_home['away_team']}` `{top_home['home_win_probability']:.3f}` `{top_home['home_win_american_odds']}`",
         f"- Highest away win probability: `{top_away['home_team']} vs {top_away['away_team']}` `{top_away['away_win_probability']:.3f}` `{top_away['away_win_american_odds']}`",
         f"- Highest over 2.5 probability: `{top_over['home_team']} vs {top_over['away_team']}` `{top_over['over_2_5_probability']:.3f}` `{top_over['over_2_5_american_odds']}`",
-        f"- Most common correct score: `{common_score}`",
+        f"- Most common single highest-probability score cell: `{common_score}`",
         "",
         "## Match Summary",
         "",
-        "| match | xG | 1/X/2 | 1/X/2 fair American odds | O2.5/U2.5 | O2.5/U2.5 fair American odds | BTTS Y/N | BTTS Y/N fair American odds | likely score | likely score fair American odds | support | short warning |",
+        "| match | xG | 1/X/2 | 1/X/2 fair American odds | O2.5/U2.5 | O2.5/U2.5 fair American odds | BTTS Y/N | BTTS Y/N fair American odds | most likely exact score | top 5 correct scores | exact score fair American odds | support | short warning |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for _, row in summary.iterrows():
@@ -343,7 +347,7 @@ def build_poisson_summary_markdown(tables: dict[str, pd.DataFrame]) -> str:
             f"{row['over_2_5_american_odds']} / {row['under_2_5_american_odds']} | "
             f"{float(row['btts_yes_probability']) * 100:.1f}% / {float(row['btts_no_probability']) * 100:.1f}% | "
             f"{row['btts_yes_american_odds']} / {row['btts_no_american_odds']} | "
-            f"{row['most_likely_score']} | {row['most_likely_score_american_odds']} | "
+            f"{row['most_likely_score']} | {row.get('top_5_correct_scores', '')} | {row['most_likely_score_american_odds']} | "
             f"{row.get('data_support_level', '')} | {row.get('primary_warning') or row.get('rating_warning') or row.get('style_warning') or ''} |"
         )
     lines.append("")

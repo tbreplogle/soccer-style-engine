@@ -301,7 +301,7 @@ def analyze_projection_rows(frame: pd.DataFrame) -> dict[str, Any]:
             if abs(probability_sum - 1.0) > 0.03:
                 _add_flag(flags, row, "wdl_probability_sum_off", f"W/D/L probabilities sum to {probability_sum:.3f}, not close to 1.0.")
         if not row.get("most_likely_score"):
-            _add_flag(flags, row, "missing_most_likely_score", "Most likely score is missing.")
+            _add_flag(flags, row, "missing_most_likely_score", "Most likely exact score is missing.")
         if _high_confidence(row) and _is_rating_only(row):
             _add_flag(flags, row, "high_confidence_low_support", "High confidence is paired with rating-only or fixture-only support.")
         if not row.get("style_inputs_available") and _contains_style_overclaim(text):
@@ -405,13 +405,13 @@ def build_checkpoint_summary_markdown(summary: dict[str, Any], rows: pd.DataFram
         f"- Real/manual/sample rows: `{summary['real_rows_reviewed']}` / `{summary['manual_rows_reviewed']}` / `{summary['sample_rows_reviewed']}`",
         f"- Source projection file: `{source_path}`",
         f"- Average projected total: `{summary['average_projected_total']}`",
-        f"- Most common likely score: `{summary['most_common_likely_score']}`",
+        f"- Most common single highest-probability score cell: `{summary['most_common_likely_score']}`",
         f"- Warning flags: `{summary['warning_count']}`",
         f"- Conclusion: {summary['plain_english_conclusion']}",
         "",
         "## What Current Baseline Can Do",
         "",
-        "- Produce score totals, W/D/L probabilities, likely scores, and confidence/context labels from current fixture plus rating support.",
+        "- Produce score totals, W/D/L probabilities, most likely exact score cells, and confidence/context labels from current fixture plus rating support.",
         "- Keep the rating-only baseline visible as a benchmark for future style-aware adjustments.",
         "- Surface projection rows that need human review before any downstream reporting.",
         "",
@@ -751,7 +751,7 @@ def format_checkpoint_terminal(result: dict[str, Any]) -> str:
         f"Status: {summary['status']}",
         f"Rows reviewed: {summary['real_rows_reviewed']} real rows, {summary['manual_rows_reviewed']} manual rows, {summary['sample_rows_reviewed']} sample/demo rows",
         f"Average projected total: {summary['average_projected_total']}",
-        f"Most common likely score: {summary['most_common_likely_score']}",
+        f"Most common single highest-probability score cell: {summary['most_common_likely_score']}",
         f"Data support counts: {summary['data_support_counts']}",
         f"Style inputs available rows: {summary['style_inputs_available_count']}",
         f"Warnings: {summary['warning_count']}",
@@ -771,7 +771,7 @@ def format_checkpoint_terminal(result: dict[str, Any]) -> str:
                 f"Highest home win probability: {top_home['home_team']} vs {top_home['away_team']} ({float(top_home['home_win_probability']):.3f})",
                 f"Highest away win probability: {top_away['home_team']} vs {top_away['away_team']} ({float(top_away['away_win_probability']):.3f})",
                 f"Highest over 2.5 probability: {top_over['home_team']} vs {top_over['away_team']} ({float(top_over['over_2_5_probability']):.3f})",
-                f"Most common correct score: {match_summary['most_likely_score'].mode().iloc[0]}",
+                f"Most common single highest-probability score cell: {match_summary['most_likely_score'].mode().iloc[0]}",
                 f"Poisson output path: {result['checkpoint_dir'] / 'poisson'}",
             ])
         else:

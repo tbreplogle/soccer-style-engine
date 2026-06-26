@@ -21,6 +21,11 @@ TUNING_RECOMMENDATIONS = {
     "needs_holdout_validation",
     "totals_still_too_low",
     "totals_improved_wdl_hurt",
+    "balanced_improvement",
+    "totals_improved_wdl_stable",
+    "scoreline_spread_improved",
+    "overfit_risk",
+    "limited_holdout_confidence",
 }
 
 MAX_TUNING_ROWS = 500
@@ -33,6 +38,8 @@ def default_rating_baseline_parameters() -> dict[str, float]:
         "neutral_home_adjustment": 0.0,
         "draw_dampening": 1.0,
         "total_goals_adjustment": 0.0,
+        "favorite_xg_spread_multiplier": 1.0,
+        "underdog_xg_floor": 0.35,
     }
 
 
@@ -51,18 +58,24 @@ def tuning_grid(profile: str = "small") -> list[dict[str, float]]:
         neutral = [-0.06, 0.0, 0.06]
         draw = [0.9, 1.0, 1.08]
         total_adj = [-0.15, 0.0, 0.15]
+        spread = [0.9, 1.0, 1.12]
+        floors = [0.3, 0.35, 0.45]
     elif profile == "medium":
         scales = [700.0, 850.0, 1000.0, 1150.0]
         totals = [2.15, 2.3, 2.45, 2.6]
         neutral = [-0.04, 0.0, 0.04]
         draw = [0.94, 1.0, 1.05]
         total_adj = [-0.1, 0.0, 0.1]
+        spread = [0.95, 1.0, 1.08]
+        floors = [0.35, 0.42]
     else:
         scales = [750.0, 900.0, 1050.0]
         totals = [2.25, 2.45]
         neutral = [0.0]
         draw = [1.0]
         total_adj = [0.0]
+        spread = [1.0]
+        floors = [0.35]
     return [
         {
             "rating_diff_to_goal_scale": scale,
@@ -70,12 +83,16 @@ def tuning_grid(profile: str = "small") -> list[dict[str, float]]:
             "neutral_home_adjustment": home_adj,
             "draw_dampening": draw_damp,
             "total_goals_adjustment": goals_adj,
+            "favorite_xg_spread_multiplier": spread_multiplier,
+            "underdog_xg_floor": underdog_floor,
         }
         for scale in scales
         for base_total in totals
         for home_adj in neutral
         for draw_damp in draw
         for goals_adj in total_adj
+        for spread_multiplier in spread
+        for underdog_floor in floors
     ]
 
 
@@ -86,10 +103,12 @@ def project_candidate_xg(home_rating: float, away_rating: float, params: dict[st
     total_adjustment = float(params.get("total_goals_adjustment", 0.0))
     diff = max(-350.0, min(350.0, float(home_rating) - float(away_rating)))
     total = max(1.6, min(3.2, base_total + total_adjustment + abs(diff) / scale * 0.18))
-    home_share = 0.5 + max(-0.18, min(0.18, diff / scale)) + home_adjustment
+    spread_multiplier = max(0.6, min(1.5, float(params.get("favorite_xg_spread_multiplier", 1.0))))
+    home_share = 0.5 + max(-0.18, min(0.18, diff / scale * spread_multiplier)) + home_adjustment
     home_share = max(0.28, min(0.72, home_share))
-    home_xg = round(max(0.35, total * home_share), 3)
-    away_xg = round(max(0.35, total * (1 - home_share)), 3)
+    floor = max(0.2, min(0.7, float(params.get("underdog_xg_floor", 0.35))))
+    home_xg = round(max(floor if diff < 0 else 0.35, total * home_share), 3)
+    away_xg = round(max(floor if diff > 0 else 0.35, total * (1 - home_share)), 3)
     probs = _projection_from_xg(home_xg, away_xg)
     probs = _apply_draw_dampening(probs, float(params.get("draw_dampening", 1.0)))
     return {
@@ -119,6 +138,7 @@ def project_rows_with_candidate(rows: pd.DataFrame, params: dict[str, Any]) -> p
             "draw_prob": candidate["draw_prob"],
             "away_win_prob": candidate["away_win_prob"],
             "over_2_5_prob": candidate["over_2_5_prob"],
+            "btts_prob": candidate.get("btts_prob"),
             "most_likely_score": candidate["most_likely_score"],
         })
     return pd.DataFrame(projected)
@@ -132,6 +152,7 @@ def evaluate_tuning_grid(
     baseline_metrics: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     from src.analysis.baseline_calibration import evaluate_projection_calibration
+    from src.analysis.scoreline_calibration import evaluate_scoreline_calibration
 
     if rows.empty or not {"home_goals", "away_goals"}.issubset(rows.columns) or _strength_columns(rows) == ("", ""):
         grid = pd.DataFrame([{
@@ -141,10 +162,13 @@ def evaluate_tuning_grid(
         }])
         return grid, grid.copy()
     baseline = baseline_metrics or evaluate_projection_calibration(rows, data_source="baseline_tuning_current_baseline")["metrics"]
+    baseline_scoreline = evaluate_scoreline_calibration(rows)["metrics"]
     grid_rows: list[dict[str, Any]] = []
     for params in tuning_grid(profile):
         projected = project_rows_with_candidate(rows, params)
         eval_result = evaluate_projection_calibration(projected, data_source="baseline_tuning_diagnostic")
+        scoreline_result = evaluate_scoreline_calibration(projected)
+        scoreline_metrics = scoreline_result["metrics"]
         metrics = eval_result["metrics"]
         record = {
             "diagnostic_status": "diagnostic_only",
@@ -154,15 +178,23 @@ def evaluate_tuning_grid(
             "brier_score": metrics["brier_score"],
             "total_goals_mae": metrics["total_goals_mae"],
             "over_2_5_brier": metrics["over_under_2_5_brier_score"],
+            "btts_brier": scoreline_metrics.get("btts_brier_score"),
             "most_likely_score_hit_rate": metrics["most_likely_score_hit_rate"],
+            "top_3_correct_score_hit_rate": scoreline_metrics.get("top_3_correct_score_hit_rate"),
+            "top_5_correct_score_hit_rate": scoreline_metrics.get("top_5_correct_score_hit_rate"),
+            "actual_score_rank_average": scoreline_metrics.get("actual_score_rank_average"),
             "mean_projected_total": metrics.get("mean_projected_total"),
             "mean_actual_total": metrics.get("mean_actual_total"),
+            "scoreline_diagnostic_labels": "; ".join(scoreline_result["labels"]),
         }
         record["composite_score"] = _composite_score(record)
         record["wdl_log_loss_delta"] = _delta(record["wdl_log_loss"], baseline.get("wdl_log_loss"))
         record["total_goals_mae_delta"] = _delta(record["total_goals_mae"], baseline.get("total_goals_mae"))
         record["over_2_5_brier_delta"] = _delta(record["over_2_5_brier"], baseline.get("over_under_2_5_brier_score"))
+        record["top_5_correct_score_hit_rate_delta"] = _delta(record["top_5_correct_score_hit_rate"], baseline_scoreline.get("top_5_correct_score_hit_rate"))
+        record["actual_score_rank_average_delta"] = _delta(record["actual_score_rank_average"], baseline_scoreline.get("actual_score_rank_average"))
         record["recommendation"] = recommendation_for_candidate(record, baseline)
+        record["candidate_label"] = scoreline_candidate_label(record, baseline)
         grid_rows.append(record)
     grid = pd.DataFrame(grid_rows)
     sort_metric = _primary_sort_column(primary_metric)
@@ -231,6 +263,13 @@ def write_baseline_tuning_outputs(
         candidate_path = output / "candidate_model_config.json"
         candidate_path.write_text(json.dumps(candidate, indent=2, default=str), encoding="utf-8")
         paths["candidate_model_config"] = candidate_path
+        scoreline_candidate = dict(candidate)
+        scoreline_candidate["config_type"] = "diagnostic_scoreline_candidate_model_config"
+        scoreline_candidate["candidate_label"] = str(best.iloc[0].get("candidate_label", "needs_holdout_validation"))
+        scoreline_candidate["warning"] = "Diagnostic-only scoreline/totals candidate. Production defaults remain unchanged."
+        scoreline_candidate_path = output / "candidate_scoreline_model_config.json"
+        scoreline_candidate_path.write_text(json.dumps(scoreline_candidate, indent=2, default=str), encoding="utf-8")
+        paths["candidate_scoreline_model_config"] = scoreline_candidate_path
         candidate_config_path = str(candidate_path)
     holdout_paths: dict[str, Path] = {}
     holdout_summary: dict[str, Any] = {"status": holdout_status}
@@ -300,6 +339,30 @@ def recommendation_for_candidate(candidate: dict[str, Any], baseline: dict[str, 
     return "keep_current_baseline"
 
 
+def scoreline_candidate_label(candidate: dict[str, Any], baseline: dict[str, Any]) -> str:
+    rows = int(candidate.get("rows") or 0)
+    if rows < 20:
+        return "insufficient_rows"
+    wdl_delta = _delta(candidate.get("wdl_log_loss"), baseline.get("wdl_log_loss"))
+    totals_delta = _delta(candidate.get("total_goals_mae"), baseline.get("total_goals_mae"))
+    ou_delta = _delta(candidate.get("over_2_5_brier"), baseline.get("over_under_2_5_brier_score"))
+    top5_delta = float(candidate.get("top_5_correct_score_hit_rate_delta") or 0.0)
+    rank_delta = float(candidate.get("actual_score_rank_average_delta") or 0.0)
+    if totals_delta < -0.03 and wdl_delta <= 0.015 and ou_delta <= 0.01:
+        if top5_delta > 0 or rank_delta < 0:
+            return "balanced_improvement"
+        return "totals_improved_wdl_stable"
+    if totals_delta < -0.03 and wdl_delta > 0.015:
+        return "totals_improved_wdl_hurt"
+    if top5_delta > 0.02 or rank_delta < -0.5:
+        return "scoreline_spread_improved"
+    if wdl_delta > 0.03:
+        return "overfit_risk"
+    if rows < 100:
+        return "limited_holdout_confidence"
+    return "keep_current_baseline"
+
+
 def _apply_draw_dampening(probs: dict[str, Any], draw_dampening: float) -> dict[str, Any]:
     if abs(draw_dampening - 1.0) < 1e-9:
         return probs
@@ -342,6 +405,8 @@ def _candidate_params_from_row(row: pd.Series) -> dict[str, float]:
         "neutral_home_adjustment",
         "draw_dampening",
         "total_goals_adjustment",
+        "favorite_xg_spread_multiplier",
+        "underdog_xg_floor",
     ]
     return {key: float(row[key]) for key in keys if key in row}
 

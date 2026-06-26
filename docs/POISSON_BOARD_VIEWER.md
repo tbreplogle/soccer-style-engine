@@ -37,7 +37,8 @@ Each match card shows:
 - projected home xG
 - projected away xG
 - projected total
-- most likely score
+- most likely exact score
+- top 5 correct-score cells
 - 1X2 probability output
 - model-implied American odds
 - over/under probabilities for 0.5 through 4.5
@@ -54,6 +55,8 @@ Score labels use Excel-safe spacing such as `1 - 0`, not `1-0`.
 American odds are a compact way to display a probability-derived price. In this viewer they are calculated directly from model probabilities and are shown only as model-implied context.
 
 They are not betting advice, selections, or wagering guidance.
+
+Exact score cells are naturally low-probability outcomes. The viewer labels the single highest-probability score cell as `Most likely exact score` and shows the top 5 cells so the distribution is easier to inspect.
 
 ## Data Support
 

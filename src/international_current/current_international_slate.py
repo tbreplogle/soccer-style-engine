@@ -37,6 +37,7 @@ from src.international_current.slate_selection import (
 from src.international_current.stat_harvest import harvest_current_international_stats
 from src.analysis.poisson_output import write_poisson_outputs
 from src.analysis.baseline_tuning import project_candidate_xg
+from src.models.score_projection import score_distribution
 from src.international_current.team_name_normalization import normalize_team_pair
 from src.models.international_projection import project_international_match
 
@@ -827,7 +828,9 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
         return {"status": "blocked_invalid_candidate_config", "paths": {}, "warning": str(exc)}
     params = config.get("model_parameters") or config.get("parameters") or {}
     preview_dir = run_dir / "candidate_preview"
+    scoreline_preview_dir = run_dir / "scoreline_candidate_preview"
     preview_dir.mkdir(parents=True, exist_ok=True)
+    scoreline_preview_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
     warning = "Diagnostic candidate preview only; production projection defaults are unchanged."
     for _, row in projections.iterrows():
@@ -840,6 +843,7 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
             continue
         candidate = project_candidate_xg(float(row["home_rating"]), float(row["away_rating"]), params)
         baseline_home_prob = float(row.get("team_a_win_prob", 0.0) or 0.0)
+        baseline_over_2_5 = _over_2_5_probability(float(row.get("team_a_xg_final", 0.0)), float(row.get("team_b_xg_final", 0.0)))
         candidate_home_prob = float(candidate["home_win_prob"])
         rows.append({
             "team_a": row.get("team_a", ""),
@@ -855,14 +859,30 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
             "probability_delta": round(candidate_home_prob - baseline_home_prob, 4),
             "baseline_projected_total": row.get("projected_total"),
             "candidate_projected_total": candidate["projected_total"],
+            "delta_total": round(float(candidate["projected_total"]) - float(row.get("projected_total", 0.0)), 4),
+            "baseline_draw_prob": row.get("draw_prob"),
+            "candidate_draw_prob": candidate["draw_prob"],
+            "baseline_away_win_prob": row.get("team_b_win_prob"),
+            "candidate_away_win_prob": candidate["away_win_prob"],
+            "delta_home_win_probability": round(float(candidate["home_win_prob"]) - baseline_home_prob, 4),
+            "delta_draw_probability": round(float(candidate["draw_prob"]) - float(row.get("draw_prob", 0.0)), 4),
+            "delta_away_win_probability": round(float(candidate["away_win_prob"]) - float(row.get("team_b_win_prob", 0.0)), 4),
+            "baseline_over_2_5_probability": baseline_over_2_5,
+            "candidate_over_2_5_probability": candidate.get("over_2_5_prob", ""),
+            "delta_over_2_5_probability": round(float(candidate.get("over_2_5_prob", 0.0)) - baseline_over_2_5, 4),
             "baseline_most_likely_score": row.get("most_likely_score"),
             "candidate_most_likely_score": candidate["most_likely_score"],
+            "baseline_top_correct_scores": _top_correct_scores(float(row.get("team_a_xg_final", 0.0)), float(row.get("team_b_xg_final", 0.0))),
+            "candidate_top_correct_scores": _top_correct_scores(float(candidate["home_xg"]), float(candidate["away_xg"])),
             "warning": warning,
         })
     frame = pd.DataFrame(rows)
     csv_path = preview_dir / "candidate_projection_comparison.csv"
     summary_path = preview_dir / "candidate_projection_comparison_summary.md"
+    scoreline_csv_path = scoreline_preview_dir / "candidate_projection_comparison.csv"
+    scoreline_summary_path = scoreline_preview_dir / "candidate_projection_comparison_summary.md"
     frame.to_csv(csv_path, index=False)
+    frame.to_csv(scoreline_csv_path, index=False)
     lines = [
         "# Candidate Projection Preview",
         "",
@@ -875,16 +895,42 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
         *(_markdown_table(frame.head(20))),
     ]
     summary_path.write_text("\n".join(lines), encoding="utf-8")
+    scoreline_summary_path.write_text("\n".join([
+        "# Scoreline Candidate Preview",
+        "",
+        "- Diagnostic-only baseline scoreline/totals candidate comparison.",
+        "- Production projection defaults are unchanged.",
+        "- Candidate tuning is diagnostic only and requires validation before any default change.",
+        f"- Candidate config: `{config_path}`",
+        "",
+        "## Comparison",
+        "",
+        *(_markdown_table(frame.head(20))),
+    ]), encoding="utf-8")
     return {
         "status": "written",
         "candidate_config": str(config_path),
         "paths": {
             "candidate_projection_comparison": str(csv_path),
             "candidate_projection_comparison_summary": str(summary_path),
+            "scoreline_candidate_projection_comparison": str(scoreline_csv_path),
+            "scoreline_candidate_projection_comparison_summary": str(scoreline_summary_path),
         },
         "warning": warning,
         "rows": int(len(frame)),
     }
+
+
+def _top_correct_scores(home_xg: float, away_xg: float, count: int = 5) -> str:
+    dist = score_distribution(max(0.0, home_xg), max(0.0, away_xg), max_goals=6).copy()
+    dist["score"] = dist["home_goals"].astype(int).astype(str) + "-" + dist["away_goals"].astype(int).astype(str)
+    return " | ".join(dist.sort_values("probability", ascending=False).head(count)["score"].tolist())
+
+
+def _over_2_5_probability(home_xg: float, away_xg: float) -> float:
+    dist = score_distribution(max(0.0, home_xg), max(0.0, away_xg), max_goals=8)
+    total = dist["home_goals"] + dist["away_goals"]
+    return float(dist.loc[total > 2.5, "probability"].sum())
 
 
 def project_current_international(
