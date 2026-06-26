@@ -128,6 +128,7 @@ class CurrentInternationalSlateRow(_DictMixin):
     group_name: str
     home_team: str
     away_team: str
+    kickoff_time: str = ""
     neutral_site: str = "unknown"
     source_fixture_status: str = "unknown"
     fixture_source_name: str = ""
@@ -153,6 +154,15 @@ class CurrentInternationalSlateRow(_DictMixin):
     placeholder_reason: str = ""
     projection_eligible: bool = True
     projection_skip_reason: str = ""
+    fixture_date: str = ""
+    kickoff_datetime_utc: str = ""
+    fixture_date_status: str = "unknown_date"
+    fixture_temporal_status: str = "unknown_date"
+    is_current_slate: bool = False
+    slate_window_status: str = ""
+    slate_skip_reason: str = ""
+    slate_window: str = ""
+    selected_by_slate_filter: bool = False
 
     def __post_init__(self) -> None:
         if self.data_support_level not in DATA_SUPPORT_LEVELS:

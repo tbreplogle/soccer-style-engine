@@ -214,6 +214,14 @@ def normalize_projection_rows(frame: pd.DataFrame) -> pd.DataFrame:
             "fixture_resolution_status": _first_value(row, ["fixture_resolution_status"], ""),
             "projection_eligible": _to_bool(_first_value(row, ["projection_eligible"], True)),
             "projection_skip_reason": _first_value(row, ["projection_skip_reason"], ""),
+            "fixture_date": _first_value(row, ["fixture_date", "match_date", "date"], ""),
+            "kickoff_time": _first_value(row, ["kickoff_time"], ""),
+            "fixture_temporal_status": _first_value(row, ["fixture_temporal_status"], ""),
+            "is_current_slate": _to_bool(_first_value(row, ["is_current_slate"], False)),
+            "slate_window_status": _first_value(row, ["slate_window_status"], ""),
+            "slate_skip_reason": _first_value(row, ["slate_skip_reason"], ""),
+            "slate_window": _first_value(row, ["slate_window"], ""),
+            "selected_by_slate_filter": _to_bool(_first_value(row, ["selected_by_slate_filter"], False)),
             "warnings_text": warnings_text,
         })
     return pd.DataFrame(rows)
@@ -489,6 +497,11 @@ def run_projection_checkpoint(
     allow_sample_data: bool = False,
     build_poisson_board: bool = False,
     max_goals: int = 6,
+    slate_window: str = "default",
+    days_ahead: int = 7,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    include_past: bool = False,
 ) -> dict[str, Any]:
     run_date = _run_date(as_of_date)
     source_path: Path | None = Path(projection_file) if projection_file else None
@@ -506,6 +519,11 @@ def run_projection_checkpoint(
             max_matches=max_matches,
             cache_dir=cache_dir,
             output_dir=current_output_dir,
+            slate_window=slate_window,
+            days_ahead=days_ahead,
+            date_from=date_from,
+            date_to=date_to,
+            include_past=include_past,
         )
         source_path = Path(current_projection_result["projections_path"])
     elif source_path is None:
@@ -567,6 +585,11 @@ def run_projection_checkpoint(
         "allow_sample_data": allow_sample_data,
         "manual_matchups": str(manual_matchups) if manual_matchups else "",
         "max_matches": max_matches,
+        "slate_window": slate_window,
+        "days_ahead": days_ahead,
+        "date_from": date_from or "",
+        "date_to": date_to or "",
+        "include_past": include_past,
         "build_poisson_board": bool(poisson_result),
         "max_goals": max_goals,
         "rows_reviewed": summary["rows_reviewed"],
@@ -588,6 +611,11 @@ def run_projection_checkpoint(
         },
         "current_projection_output_paths": (
             current_projection_result.get("manifest", {}).get("output_paths", {})
+            if current_projection_result
+            else {}
+        ),
+        "current_projection_slate_selection": (
+            current_projection_result.get("manifest", {}).get("slate_selection", {})
             if current_projection_result
             else {}
         ),

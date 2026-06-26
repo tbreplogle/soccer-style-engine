@@ -472,6 +472,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--build-poisson-board", action="store_true")
     p.add_argument("--include-unresolved-fixtures", action="store_true")
     p.add_argument("--resolved-only", action="store_true")
+    p.add_argument("--slate-window", choices=["default", "today", "next", "upcoming", "date-range", "date_range", "all-resolved", "all_resolved"], default="default")
+    p.add_argument("--days-ahead", type=int, default=7)
+    p.add_argument("--date-from")
+    p.add_argument("--date-to")
+    p.add_argument("--include-past", action="store_true")
 
     p = sub.add_parser("seed-current-international-cache")
     p.add_argument("--as-of-date", required=True)
@@ -502,6 +507,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-sample-data", action="store_true")
     p.add_argument("--build-poisson-board", action="store_true")
     p.add_argument("--max-goals", type=int, default=6)
+    p.add_argument("--slate-window", choices=["default", "today", "next", "upcoming", "date-range", "date_range", "all-resolved", "all_resolved"], default="default")
+    p.add_argument("--days-ahead", type=int, default=7)
+    p.add_argument("--date-from")
+    p.add_argument("--date-to")
+    p.add_argument("--include-past", action="store_true")
 
     return parser
 
@@ -1024,6 +1034,11 @@ def main(argv: list[str] | None = None) -> None:
             build_poisson_board=args.build_poisson_board,
             include_unresolved_fixtures=args.include_unresolved_fixtures,
             resolved_only=(args.resolved_only or not args.include_unresolved_fixtures),
+            slate_window=args.slate_window,
+            days_ahead=args.days_ahead,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            include_past=args.include_past,
         )
         print(f"Current international source summary: {result['source_summary_path']}")
         print(f"Current international slate: {result['slate_path']}")
@@ -1035,7 +1050,7 @@ def main(argv: list[str] | None = None) -> None:
         for warning in result["manifest"].get("strict_real_data_warnings", []):
             print(f"Warning: {warning}")
         if not result["projections"].empty:
-            columns = ["team_a", "team_b", "projected_total", "most_likely_score", "confidence_label", "data_support_level", "rating_status", "data_coverage_score"]
+            columns = ["team_a", "team_b", "fixture_date", "kickoff_time", "projected_total", "most_likely_score", "confidence_label", "data_support_level", "rating_status", "slate_window_status", "data_coverage_score"]
             print(result["projections"][columns].to_string(index=False))
     elif args.command == "seed-current-international-cache":
         result = seed_current_international_cache(
@@ -1076,6 +1091,11 @@ def main(argv: list[str] | None = None) -> None:
             build_viewer=args.build_viewer,
             build_poisson_board=args.build_poisson_board,
             max_goals=args.max_goals,
+            slate_window=args.slate_window,
+            days_ahead=args.days_ahead,
+            date_from=args.date_from,
+            date_to=args.date_to,
+            include_past=args.include_past,
         )
         print(format_checkpoint_terminal(result))
     elif args.command == "diagnose-baselines":

@@ -155,6 +155,8 @@ def test_current_audit_and_projection_use_backbone(tmp_path):
             "--allow-sample-data",
             "--max-matches",
             "10",
+            "--slate-window",
+            "all-resolved",
             "--cache-dir",
             str(cache_dir),
             "--output-dir",

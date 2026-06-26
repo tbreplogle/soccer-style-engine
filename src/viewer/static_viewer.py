@@ -47,8 +47,14 @@ tr.latest td { background: #f0f7f2; }
 .muted { color: #6f7377; }
 .report { background: #fff; border: 1px solid #d8d8d0; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
 pre { overflow-x: auto; background: #202124; color: #f7f7f4; padding: 12px; border-radius: 6px; }
-.match-card { background: #fff; border: 1px solid #d8d8d0; border-radius: 8px; padding: 16px; margin: 18px 0; }
+.match-card { background: #fff; border: 1px solid #d8d8d0; border-radius: 8px; padding: 0; margin: 18px 0; }
+.match-card summary { cursor: pointer; list-style: none; padding: 16px; }
+.match-card summary::-webkit-details-marker { display: none; }
+.match-body { padding: 0 16px 16px; }
 .card-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+.summary-line { display: flex; flex-wrap: wrap; gap: 8px 14px; color: #4f5357; font-size: 13px; margin-top: 8px; }
+.board-controls { background: #fff; border: 1px solid #d8d8d0; border-radius: 6px; padding: 12px; margin: 16px 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.board-controls select, .board-controls button { border: 1px solid #b8b8ae; border-radius: 6px; background: #fff; padding: 7px 10px; font: inherit; }
 .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .badge { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #ecece4; font-size: 12px; font-weight: 700; }
 .badge-warn { background: #fff1d7; }
@@ -113,6 +119,8 @@ def _artifact_links(run_date: str) -> str:
     names = [
         ("Checkpoint summary", f"../../../projection_checkpoints/{run_date}/projection_checkpoint_summary.md"),
         ("Checkpoint manifest", f"../../../projection_checkpoints/{run_date}/projection_checkpoint_manifest.json"),
+        ("Slate selection summary", f"../../../current_international/{run_date}/slate_selection/slate_selection_summary.md"),
+        ("Selected fixtures CSV", f"../../../current_international/{run_date}/slate_selection/selected_fixtures.csv"),
         ("Poisson summary", f"../../../projection_checkpoints/{run_date}/poisson/poisson_summary.md"),
         ("Match summary CSV", f"../../../projection_checkpoints/{run_date}/poisson/poisson_match_summary.csv"),
         ("1X2 CSV", f"../../../projection_checkpoints/{run_date}/poisson/poisson_1x2.csv"),
@@ -228,22 +236,38 @@ def _match_card(
     btts: dict[str, str],
     clean: dict[str, str],
     scores: list[dict[str, str]],
+    index: int = 0,
 ) -> str:
     home = row.get("home_team", "")
     away = row.get("away_team", "")
+    match_id = f"match-{index + 1}"
     source_tier = row.get("source_tier", "")
     style_state = "available" if str(row.get("style_inputs_available", "")).lower() == "true" else "unavailable"
+    fixture_date = row.get("fixture_date") or row.get("match_date") or ""
+    kickoff = row.get("kickoff_time") or ""
     parts = [
-        "<article class=\"match-card\">",
+        f"<details class=\"match-card\" id=\"{escape_html(match_id)}\"{' open' if index == 0 else ''}>",
+        "<summary>",
         "<div class=\"card-title\">",
         f"<h2>{escape_html(home)} vs {escape_html(away)}</h2>",
         f"<span class=\"badge\">{escape_html(source_tier or 'unknown source')}</span>",
         "</div>",
+        "<div class=\"summary-line\">",
+        f"<span>Date: {escape_html(fixture_date or 'unknown')}{escape_html(' ' + kickoff if kickoff else '')}</span>",
+        f"<span>xG: {escape_html(row.get('projected_home_xg'))} / {escape_html(row.get('projected_away_xg'))}</span>",
+        f"<span>1X2: {escape_html(_pct(row.get('home_win_probability')))} / {escape_html(_pct(row.get('draw_probability')))} / {escape_html(_pct(row.get('away_win_probability')))}</span>",
+        f"<span>Likely: {escape_html(row.get('most_likely_score'))}</span>",
+        f"<span>Support: {escape_html(row.get('data_support_level'))}</span>",
+        f"<span>Rating: {escape_html(row.get('rating_status'))}</span>",
+        "</div>",
+        "</summary>",
+        "<div class=\"match-body\">",
         "<div class=\"badges\">",
         f"<span class=\"badge\">Support: {escape_html(row.get('data_support_level'))}</span>",
         f"<span class=\"badge\">Confidence: {escape_html(row.get('confidence_label'))}</span>",
         f"<span class=\"badge\">Style inputs: {escape_html(style_state)}</span>",
         f"<span class=\"badge\">Rating: {escape_html(row.get('rating_status'))}</span>",
+        f"<span class=\"badge\">Slate: {escape_html(row.get('slate_window') or 'unknown')}</span>",
         "</div>",
         "<section class=\"grid\">",
         f"<div class=\"metric\"><span>Projected xG</span>{escape_html(home)} {escape_html(row.get('projected_home_xg'))} | {escape_html(away)} {escape_html(row.get('projected_away_xg'))}</div>",
@@ -277,7 +301,8 @@ def _match_card(
         _top_scores_table(scores),
         "<h3>Correct Score Grid</h3>",
         _correct_score_grid(scores),
-        "</article>",
+        "</div>",
+        "</details>",
     ]
     return "\n".join(parts)
 
@@ -308,6 +333,18 @@ def _projection_checkpoint_board_page(entry: dict[str, Any], output_dir: Path) -
         banners.append("<div class=\"notice warning\"><strong>Manual rows are user supplied and not source-verified.</strong></div>")
     if real:
         banners.append("<div class=\"notice\"><strong>Real rows:</strong> review source and reliability labels before using the output.</div>")
+    if entry.get("default_used_next_upcoming"):
+        banners.append("<div class=\"notice warning\"><strong>No as-of date fixtures were found.</strong> The default slate used the next upcoming fixture date.</div>")
+    if str(entry.get("slate_window") or "") == "all_resolved":
+        banners.append("<div class=\"notice warning\"><strong>All-resolved slate mode is active.</strong> This is review coverage, not a current-date slate.</div>")
+
+    options = []
+    for index, row in enumerate(match_rows):
+        label = f"{row.get('home_team', '')} vs {row.get('away_team', '')}"
+        fixture_date = row.get("fixture_date") or row.get("match_date") or ""
+        if fixture_date:
+            label = f"{label} - {fixture_date}"
+        options.append(f"<option value=\"match-{index + 1}\">{escape_html(label)}</option>")
 
     sections = [
         "<!doctype html><html><head><meta charset=\"utf-8\">",
@@ -322,11 +359,21 @@ def _projection_checkpoint_board_page(entry: dict[str, Any], output_dir: Path) -
         f"<div class=\"metric\"><span>Rows</span>Real {real} | Manual {manual} | Sample {sample}</div>",
         f"<div class=\"metric\"><span>Matches with Poisson board</span>{escape_html(len(match_rows))}</div>",
         f"<div class=\"metric\"><span>Warning flags</span>{escape_html(entry.get('warnings_count'))}</div>",
+        f"<div class=\"metric\"><span>Slate window</span>{escape_html(entry.get('slate_window'))}</div>",
+        f"<div class=\"metric\"><span>Selected date range</span>{escape_html(entry.get('selected_date_range'))}</div>",
+        f"<div class=\"metric\"><span>Selected fixtures</span>{escape_html(entry.get('selected_fixture_count'))}</div>",
+        f"<div class=\"metric\"><span>Skipped past / future / unresolved</span>{escape_html(entry.get('skipped_past_fixtures'))} / {escape_html(entry.get('skipped_future_outside_window_fixtures'))} / {escape_html(entry.get('skipped_unresolved_fixtures'))}</div>",
         "</section>",
         "<h2>Raw Artifacts</h2>",
         _artifact_links(run_date),
+        "<div class=\"board-controls\">",
+        "<label for=\"match-selector\"><strong>Match</strong></label>",
+        f"<select id=\"match-selector\">{''.join(options)}</select>",
+        "<button type=\"button\" id=\"expand-all\">Expand all</button>",
+        "<button type=\"button\" id=\"collapse-all\">Collapse all</button>",
+        "</div>",
     ]
-    for row in match_rows:
+    for index, row in enumerate(match_rows):
         key = _match_key(row)
         sections.append(_match_card(
             row,
@@ -335,8 +382,18 @@ def _projection_checkpoint_board_page(entry: dict[str, Any], output_dir: Path) -
             btts.get(key, {}),
             clean.get(key, {}),
             scores.get(key, []),
+            index=index,
         ))
-    sections.extend(["</main></body></html>"])
+    sections.extend([
+        "<script>",
+        "const selector = document.getElementById('match-selector');",
+        "const cards = Array.from(document.querySelectorAll('.match-card'));",
+        "if (selector) { selector.addEventListener('change', () => { const card = document.getElementById(selector.value); if (card) { card.open = true; card.scrollIntoView({behavior: 'smooth', block: 'start'}); } }); }",
+        "document.getElementById('expand-all')?.addEventListener('click', () => cards.forEach(card => card.open = true));",
+        "document.getElementById('collapse-all')?.addEventListener('click', () => cards.forEach((card, index) => card.open = index === 0));",
+        "</script>",
+        "</main></body></html>",
+    ])
     board_path.write_text("\n".join(sections), encoding="utf-8")
     return str(board_path)
 
@@ -375,6 +432,7 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             run_dir / "current_international_source_summary.md",
             run_dir / "current_international_projection_report.md",
             run_dir / "fixture_readiness" / "fixture_readiness_summary.md",
+            run_dir / "slate_selection" / "slate_selection_summary.md",
             run_dir / "source_audit" / "source_audit_summary.md",
             run_dir / "cache_seed" / "cache_seed_summary.md",
         ] if path.exists()
@@ -394,6 +452,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         f"<div class=\"metric\"><span>Rows</span>{escape_html(entry.get('row_count'))}</div>",
         f"<div class=\"metric\"><span>Resolved / unresolved</span>{escape_html(entry.get('resolved_rows') or '')} / {escape_html(entry.get('unresolved_rows') or '')}</div>",
         f"<div class=\"metric\"><span>Projected / skipped placeholders</span>{escape_html(entry.get('projected_rows') or '')} / {escape_html(entry.get('skipped_placeholder_rows') or '')}</div>",
+        f"<div class=\"metric\"><span>Slate window</span>{escape_html(entry.get('slate_window') or entry.get('slate_type'))}</div>",
+        f"<div class=\"metric\"><span>Selected date range</span>{escape_html(entry.get('selected_date_range') or '')}</div>",
+        f"<div class=\"metric\"><span>Selected fixtures</span>{escape_html(entry.get('selected_fixture_count') or '')}</div>",
+        f"<div class=\"metric\"><span>Skipped past / future / unresolved</span>{escape_html(entry.get('skipped_past_fixtures') or '')} / {escape_html(entry.get('skipped_future_outside_window_fixtures') or '')} / {escape_html(entry.get('skipped_unresolved_fixtures') or '')}</div>",
         f"<div class=\"metric\"><span>Warnings</span>{escape_html(entry.get('warnings_count'))}</div>",
         f"<div class=\"metric\"><span>Slate type</span>{escape_html(entry.get('slate_type'))}</div>",
         "</section>",
@@ -418,6 +480,16 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
             "<div class=\"notice warning\"><strong>Unresolved placeholder fixtures were skipped and not projected.</strong> "
             "<a href=\"#fixture-readiness\">Open fixture readiness outputs below.</a></div>"
         )
+    if entry.get("default_used_next_upcoming"):
+        sections.append(
+            "<div class=\"notice warning\"><strong>No as-of date fixtures were found.</strong> "
+            "The default slate used the next upcoming fixture date.</div>"
+        )
+    if str(entry.get("slate_window") or "") == "all_resolved":
+        sections.append(
+            "<div class=\"notice warning\"><strong>All-resolved slate mode is active.</strong> "
+            "This is review coverage, not a current-date slate.</div>"
+        )
     for title, filename in [
         ("Club Slate", "club_slate_projections.csv"),
         ("International Slate", "international_slate_projections.csv"),
@@ -435,6 +507,10 @@ def _run_detail_page(entry: dict[str, Any], output_dir: Path) -> tuple[str, dict
         ("Unresolved Fixtures", "fixture_readiness/unresolved_fixtures.csv"),
         ("Projection Eligible Fixtures", "fixture_readiness/projection_eligible_fixtures.csv"),
         ("Projection Skipped Fixtures", "fixture_readiness/projection_skipped_fixtures.csv"),
+        ("Selected Slate Fixtures", "slate_selection/selected_fixtures.csv"),
+        ("Slate Skipped By Date", "slate_selection/skipped_by_date_fixtures.csv"),
+        ("Slate Skipped Unresolved", "slate_selection/skipped_unresolved_fixtures.csv"),
+        ("All Resolved Fixtures", "slate_selection/all_resolved_fixtures.csv"),
         ("Fixture Seed Results", "cache_seed/fixture_seed_results.csv"),
         ("Rating Seed Results", "cache_seed/rating_seed_results.csv"),
         ("Stat Seed Results", "cache_seed/stat_seed_results.csv"),
@@ -477,6 +553,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         "sample",
         "resolved",
         "unresolved",
+        "slate window",
+        "selected fixtures",
+        "selected range",
         "skipped placeholders",
         "poisson matches",
         "warnings",
@@ -508,6 +587,9 @@ def _index_table(entries: list[dict[str, Any]]) -> str:
         rows.append(f"<td>{escape_html(entry.get('sample_rows_reviewed') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('resolved_rows') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('unresolved_rows') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('slate_window') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('selected_fixture_count') or '')}</td>")
+        rows.append(f"<td>{escape_html(entry.get('selected_date_range') or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('skipped_placeholder_rows') or '')}</td>")
         rows.append(f"<td>{escape_html(poisson_match_count or '')}</td>")
         rows.append(f"<td>{escape_html(entry.get('warnings_count'))}</td>")

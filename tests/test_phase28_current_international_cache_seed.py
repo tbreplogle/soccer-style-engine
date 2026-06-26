@@ -141,11 +141,12 @@ def test_cache_seed_writes_metadata_and_project_uses_seeded_real_cache(tmp_path)
 
     projection = project_current_international(
         as_of_date="2026-06-25",
-        cache_dir=cache,
-        output_dir=output,
-        strict_real_data=True,
-        build_poisson_board=True,
-    )
+            cache_dir=cache,
+            output_dir=output,
+            strict_real_data=True,
+            build_poisson_board=True,
+            slate_window="all-resolved",
+        )
     assert projection["manifest"]["strict_real_data_status"] == "pass"
     assert projection["manifest"]["real_fixture_count"] == 3
     assert len(projection["projections"]) == 3

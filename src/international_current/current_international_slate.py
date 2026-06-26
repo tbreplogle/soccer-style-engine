@@ -26,6 +26,10 @@ from src.international_current.fixture_resolution import (
 )
 from src.international_current.rating_harvest import harvest_current_international_ratings
 from src.international_current.rating_projection import project_from_fixture_and_ratings
+from src.international_current.slate_selection import (
+    apply_slate_selection,
+    write_slate_selection_outputs,
+)
 from src.international_current.stat_harvest import harvest_current_international_stats
 from src.analysis.poisson_output import write_poisson_outputs
 from src.international_current.team_name_normalization import normalize_team_pair
@@ -39,6 +43,7 @@ SLATE_COLUMNS = [
     "group_name",
     "home_team",
     "away_team",
+    "kickoff_time",
     "neutral_site",
     "source_fixture_status",
     "fixture_source_name",
@@ -64,6 +69,15 @@ SLATE_COLUMNS = [
     "placeholder_reason",
     "projection_eligible",
     "projection_skip_reason",
+    "fixture_date",
+    "kickoff_datetime_utc",
+    "fixture_date_status",
+    "fixture_temporal_status",
+    "is_current_slate",
+    "slate_window_status",
+    "slate_skip_reason",
+    "slate_window",
+    "selected_by_slate_filter",
 ]
 
 PROJECTION_COLUMNS = [
@@ -92,6 +106,9 @@ PROJECTION_COLUMNS = [
     "away_rating",
     "rating_diff",
     "match_date",
+    "fixture_date",
+    "kickoff_time",
+    "kickoff_datetime_utc",
     "competition",
     "round_name",
     "group_name",
@@ -129,6 +146,12 @@ PROJECTION_COLUMNS = [
     "is_resolved_fixture",
     "projection_eligible",
     "projection_skip_reason",
+    "fixture_temporal_status",
+    "is_current_slate",
+    "slate_window_status",
+    "slate_skip_reason",
+    "slate_window",
+    "selected_by_slate_filter",
 ]
 
 
@@ -308,6 +331,7 @@ def _fixture_to_slate_row(
         group_name=fixture.group_name,
         home_team=fixture.home_team,
         away_team=fixture.away_team,
+        kickoff_time=fixture.kickoff_time,
         neutral_site=fixture.neutral_site,
         source_fixture_status=fixture.status,
         fixture_source_name=fixture.source_name,
@@ -333,6 +357,15 @@ def _fixture_to_slate_row(
         placeholder_reason=resolution.placeholder_reason,
         projection_eligible=resolution.projection_eligible,
         projection_skip_reason=resolution.projection_skip_reason,
+        fixture_date=fixture.match_date,
+        kickoff_datetime_utc="",
+        fixture_date_status="valid_date" if fixture.match_date else "unknown_date",
+        fixture_temporal_status="unknown_date",
+        is_current_slate=False,
+        slate_window_status="",
+        slate_skip_reason="",
+        slate_window="",
+        selected_by_slate_filter=False,
     )
 
 
@@ -668,6 +701,9 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
         "data_support_level",
         "fixture_resolution_status",
         "projection_eligible",
+        "fixture_date",
+        "fixture_temporal_status",
+        "slate_window_status",
     ]
     lines.extend(_markdown_table(projections[summary_cols] if not projections.empty else projections))
     lines.extend(["", "## Current Slate Inputs", ""])
@@ -679,6 +715,11 @@ def _write_projection_report(path: Path, projections: pd.DataFrame, slate: pd.Da
         "fixture_resolution_status",
         "projection_eligible",
         "projection_skip_reason",
+        "fixture_date",
+        "fixture_temporal_status",
+        "selected_by_slate_filter",
+        "slate_window_status",
+        "slate_skip_reason",
         "data_mode",
         "data_support_level",
         "warnings",
@@ -706,6 +747,11 @@ def project_current_international(
     build_poisson_board: bool = False,
     include_unresolved_fixtures: bool = False,
     resolved_only: bool = True,
+    slate_window: str = "default",
+    days_ahead: int = 7,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    include_past: bool = False,
 ) -> dict[str, Any]:
     slate_result = build_current_international_slate(
         as_of_date=as_of_date,
@@ -720,11 +766,23 @@ def project_current_international(
         refresh_stats=refresh_stats,
     )
     full_slate = slate_result["slate"].copy()
-    if "projection_eligible" in full_slate.columns:
-        projection_slate = full_slate[full_slate["projection_eligible"].astype(bool)].copy()
-    else:
-        projection_slate = full_slate.copy()
-    slate = projection_slate.head(max_matches).copy()
+    slate_selection = apply_slate_selection(
+        full_slate,
+        as_of_date=as_of_date,
+        slate_window=slate_window,
+        days_ahead=days_ahead,
+        date_from=date_from,
+        date_to=date_to,
+        include_past=include_past,
+    )
+    full_slate = slate_selection["annotated_slate"]
+    selection_paths = write_slate_selection_outputs(
+        run_dir=slate_result["run_dir"],
+        annotated_slate=full_slate,
+        summary=slate_selection["summary"],
+    )
+    full_slate.to_csv(slate_result["slate_path"], index=False)
+    slate = slate_selection["selected_slate"].head(max_matches).copy()
     ratings = _rating_lookup(slate_result["ratings"])
     rows = []
     for _, matchup in slate.iterrows():
@@ -790,6 +848,9 @@ def project_current_international(
         stat_source = str(matchup.get("stats_source_name", ""))
         row.update({
             "match_date": matchup["match_date"],
+            "fixture_date": matchup.get("fixture_date", matchup["match_date"]),
+            "kickoff_time": matchup.get("kickoff_time", ""),
+            "kickoff_datetime_utc": matchup.get("kickoff_datetime_utc", ""),
             "competition": matchup["competition"],
             "round_name": matchup["round_name"],
             "group_name": matchup["group_name"],
@@ -831,6 +892,12 @@ def project_current_international(
             "is_resolved_fixture": matchup.get("is_resolved_fixture", True),
             "projection_eligible": matchup.get("projection_eligible", True),
             "projection_skip_reason": matchup.get("projection_skip_reason", ""),
+            "fixture_temporal_status": matchup.get("fixture_temporal_status", ""),
+            "is_current_slate": matchup.get("is_current_slate", False),
+            "slate_window_status": matchup.get("slate_window_status", ""),
+            "slate_skip_reason": matchup.get("slate_skip_reason", ""),
+            "slate_window": matchup.get("slate_window", ""),
+            "selected_by_slate_filter": matchup.get("selected_by_slate_filter", False),
         })
         rows.append(row)
     projections = pd.DataFrame(rows, columns=PROJECTION_COLUMNS)
@@ -841,7 +908,7 @@ def project_current_international(
     if build_poisson_board and not projections.empty:
         poisson_rows = projections.rename(columns={"team_a_xg_final": "projected_home_xg", "team_b_xg_final": "projected_away_xg"})
         poisson_paths = write_poisson_outputs(poisson_rows, run_dir / "poisson")
-    report_path = _write_projection_report(run_dir / "current_international_projection_report.md", projections, slate_result["slate"])
+    report_path = _write_projection_report(run_dir / "current_international_projection_report.md", projections, full_slate)
     manifest = dict(slate_result["manifest"])
     manifest["projection_rows"] = len(projections)
     fallback_neutral_rows = int(((projections.get("rating_status", pd.Series(dtype=str)) == "both_ratings_missing") & (projections.get("team_a_xg_final", pd.Series(dtype=float)) == projections.get("team_b_xg_final", pd.Series(dtype=float)))).sum()) if not projections.empty else 0
@@ -877,6 +944,34 @@ def project_current_international(
     manifest["fallback_neutral_rows_resolved"] = fallback_neutral_rows
     manifest["include_unresolved_fixtures"] = include_unresolved_fixtures
     manifest["resolved_only"] = resolved_only
+    manifest["slate_selection"] = slate_selection["summary"]
+    manifest.update({
+        "slate_window": slate_selection["summary"]["slate_window"],
+        "effective_slate_window": slate_selection["summary"]["effective_slate_window"],
+        "days_ahead": slate_selection["summary"]["days_ahead"],
+        "date_from": slate_selection["summary"]["date_from"],
+        "date_to": slate_selection["summary"]["date_to"],
+        "include_past": slate_selection["summary"]["include_past"],
+        "selected_fixture_count": slate_selection["summary"]["selected_fixtures"],
+        "skipped_by_date_fixtures": slate_selection["summary"]["skipped_by_date_fixtures"],
+        "skipped_past_fixtures": slate_selection["summary"]["skipped_past_fixtures"],
+        "skipped_future_outside_window_fixtures": slate_selection["summary"]["skipped_future_outside_window_fixtures"],
+        "skipped_unresolved_fixtures": slate_selection["summary"]["skipped_unresolved_fixtures"],
+        "selected_date_range": slate_selection["summary"]["selected_date_range"],
+        "earliest_selected_fixture_date": slate_selection["summary"]["earliest_selected_fixture_date"],
+        "latest_selected_fixture_date": slate_selection["summary"]["latest_selected_fixture_date"],
+        "max_matches_applied_after_slate_filter": True,
+    })
+    if slate_selection["summary"]["default_used_next_upcoming"]:
+        manifest["warnings"] = list(dict.fromkeys([
+            *manifest.get("warnings", []),
+            "No fixtures were found on the as-of date; default slate selection used the next upcoming fixture date.",
+        ]))
+    if slate_selection["summary"]["effective_slate_window"] == "all_resolved":
+        manifest["warnings"] = list(dict.fromkeys([
+            *manifest.get("warnings", []),
+            "All-resolved slate mode bypasses current-date filtering for review coverage.",
+        ]))
     if skipped_placeholder_rows:
         manifest["warnings"] = list(dict.fromkeys([*manifest.get("warnings", []), PLACEHOLDER_SKIP_WARNING]))
     manifest["fallback_neutral_rows"] = fallback_neutral_rows
@@ -884,12 +979,16 @@ def project_current_international(
         **manifest["output_paths"],
         "projection_report": str(report_path),
         "projections": str(projection_path),
+        **selection_paths,
         "poisson": poisson_paths,
     }
     manifest_path = _write_json(run_dir / "current_international_manifest.json", manifest)
     return {
         **slate_result,
+        "slate": full_slate,
         "projections": projections,
+        "selected_slate": slate,
+        "slate_selection": slate_selection,
         "projections_path": projection_path,
         "projection_report_path": report_path,
         "poisson_paths": poisson_paths,
