@@ -82,3 +82,5 @@ This is still not true style alignment. Ratings are strength priors, not event/t
 Phase 35 adds scoreline and totals calibration before style-aware xG adjustments. This step checks whether the baseline xG distribution is too compressed around low exact-score cells, measures top 3/top 5 exact-score coverage, and writes diagnostic scoreline candidate previews under `outputs/current_international/YYYY-MM-DD/scoreline_candidate_preview/`.
 
 Style comes after baseline scoreline calibration because style adjustments need a stable baseline target. Free proxy metrics remain separate from true event/tracking style, and proxy/style adjustments remain disabled by default.
+
+Phase 36 audits xG caps/floors and expands the baseline tuning grid. The current rating baseline no longer uses narrow hidden caps that force favorite/underdog xG into a small range. Diagnostic candidate configs remain preview-only and must beat the baseline on validation before any future default change.

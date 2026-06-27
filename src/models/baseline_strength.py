@@ -42,7 +42,7 @@ def baseline_expected_goals(
     goals_against = "xg_against" if "xg_against" in prior.columns and prior["xg_against"].notna().any() else "goals_against"
     league_for = float(pd.to_numeric(prior[goals_for], errors="coerce").mean())
     league_against = float(pd.to_numeric(prior[goals_against], errors="coerce").mean())
-    league_avg = max(0.2, (league_for + league_against) / 2)
+    league_avg = max(0.05, (league_for + league_against) / 2)
     home_rows = prior[prior["team"].eq(home_team)]
     away_rows = prior[prior["team"].eq(away_team)]
     home_attack = float(pd.to_numeric(home_rows[goals_for], errors="coerce").mean()) if not home_rows.empty else league_avg
@@ -53,8 +53,8 @@ def baseline_expected_goals(
     home_xg = (0.58 * home_attack + 0.42 * away_defense_allowed) + home_advantage
     away_xg = (0.58 * away_attack + 0.42 * home_defense_allowed) - home_advantage / 2
     return {
-        "home_xg_base": round(max(0.15, home_xg), 4),
-        "away_xg_base": round(max(0.15, away_xg), 4),
+        "home_xg_base": round(max(0.05, home_xg), 4),
+        "away_xg_base": round(max(0.05, away_xg), 4),
         "home_prior_matches": int(home_rows["match_id"].nunique()),
         "away_prior_matches": int(away_rows["match_id"].nunique()),
         "league_home_advantage": home_advantage,

@@ -13,6 +13,7 @@ from src.agents.team_identity_agent import classify_team_identity
 from src.analysis.projection_checkpoint import format_checkpoint_terminal, run_projection_checkpoint
 from src.analysis.baseline_calibration import calibrate_baseline_projections, format_calibration_terminal
 from src.analysis.current_result_grading import format_grading_terminal, grade_current_projections
+from src.analysis.xg_formula_audit import audit_xg_formula, format_xg_audit_terminal
 from src.club.league_readiness import check_league_readiness
 from src.config import TEAM_MATCH_STYLE_LOG_PATH, TEAM_STYLE_PROFILES_PATH, ensure_project_dirs
 from src.data_ingestion.football_data_current import normalize_current_inputs
@@ -570,6 +571,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source-cache-dir", default="data/source_cache/current_international")
     p.add_argument("--output-dir", default="outputs/grading")
     p.add_argument("--min-matches", type=int, default=1)
+    p.add_argument("--candidate-config")
+
+    p = sub.add_parser("audit-xg-formula")
+    p.add_argument("--as-of-date", required=True)
+    p.add_argument("--output-dir", default="outputs/calibration")
 
     p = sub.add_parser("check-league-readiness")
     p.add_argument("--as-of-date", required=True)
@@ -1230,8 +1236,12 @@ def main(argv: list[str] | None = None) -> None:
             source_cache_dir=args.source_cache_dir,
             output_dir=args.output_dir,
             min_matches=args.min_matches,
+            candidate_config=args.candidate_config,
         )
         print(format_grading_terminal(result))
+    elif args.command == "audit-xg-formula":
+        result = audit_xg_formula(as_of_date=args.as_of_date, output_dir=args.output_dir)
+        print(format_xg_audit_terminal(result))
     elif args.command == "check-league-readiness":
         leagues = [league.strip() for league in args.leagues.split(",") if league.strip()]
         result = check_league_readiness(

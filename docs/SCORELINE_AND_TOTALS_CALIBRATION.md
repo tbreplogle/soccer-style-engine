@@ -27,6 +27,18 @@ The diagnostic module measures exact-score coverage, top 3/top 5 coverage, actua
 
 Diagnostic labels include totals too low/high, scorelines too compressed, favorites too capped, underdogs too high, draw cluster too high, needs more goal spread, and insufficient rows.
 
+## Phase 36 xG Compression Audit
+
+Phase 36 audits formulas for hidden xG compression. Earlier current rating projection logic used a hard rating-difference clamp, a narrow total-goals clamp, a home-share clamp, and a `0.35` team xG floor. Those bounds can cluster most likely exact scores around `1-0`, `1-1`, and `0-1`.
+
+The current rating baseline now avoids artificial favorite xG caps and underdog floors in normal production calculation. It keeps only broad reported safety guards:
+
+- team xG cannot be negative
+- missing/non-numeric xG falls back to a neutral value with a warning
+- team xG above `5.00` is lowered by an explicit sanity guard
+
+When a guard is applied, projection output includes `xg_safety_guard_applied` and `xg_safety_guard_reason`.
+
 ## Guardrails
 
 This report is diagnostic only. It does not change production defaults, create results, use current StatsBomb live data, or enable proxy/style adjustments.

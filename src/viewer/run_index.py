@@ -73,6 +73,7 @@ CURRENT_INTERNATIONAL_OUTPUT_NAMES = (
     "candidate_preview/candidate_projection_comparison_summary.md",
     "scoreline_candidate_preview/candidate_projection_comparison.csv",
     "scoreline_candidate_preview/candidate_projection_comparison_summary.md",
+    "scoreline_candidate_preview/candidate_projection_summary.md",
 )
 
 CALIBRATION_OUTPUT_NAMES = (
@@ -107,6 +108,13 @@ GRADING_OUTPUT_NAMES = (
     "graded_matches.csv",
     "scoreline_miss_types.csv",
     "result_grading_manifest.json",
+    "candidate_grading_comparison/candidate_grading_comparison.csv",
+    "candidate_grading_comparison/candidate_grading_comparison_summary.md",
+)
+
+XG_FORMULA_AUDIT_OUTPUT_NAMES = (
+    "xg_formula_audit_summary.md",
+    "xg_formula_audit.csv",
 )
 
 HISTORICAL_SEED_OUTPUT_NAMES = (
@@ -460,6 +468,36 @@ def _grading_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     }
 
 
+def _xg_formula_audit_entry(run_dir: Path) -> dict[str, Any]:
+    summary = run_dir / "xg_formula_audit_summary.md"
+    csv_path = run_dir / "xg_formula_audit.csv"
+    row_count = 0
+    if csv_path.exists():
+        try:
+            row_count = max(0, sum(1 for _ in csv_path.open("r", encoding="utf-8-sig")) - 1)
+        except OSError:
+            row_count = 0
+    return {
+        "entry_type": "xg_formula_audit",
+        "run_date": str(run_dir.parent.name),
+        "run_id": f"xg_formula_audit_{run_dir.parent.name}",
+        "generated_at": "",
+        "status": "written",
+        "currentness_status": "formula_audit",
+        "season_sanity_status": "not_applicable",
+        "leagues": [],
+        "row_count": row_count,
+        "warnings_count": 0,
+        "warnings": [],
+        "output_files_present": [name for name in XG_FORMULA_AUDIT_OUTPUT_NAMES if (run_dir / name).exists()],
+        "manifest_path": "",
+        "summary_path": str(summary) if summary.exists() else "",
+        "run_dir": str(run_dir),
+        "error": "",
+        "slate_type": "xg_formula_audit",
+    }
+
+
 def _scoreline_diagnostics_entry(run_dir: Path, manifest_path: Path) -> dict[str, Any]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -548,6 +586,9 @@ def _iter_calibration_entries(root: Path) -> list[dict[str, Any]]:
             entries.append(_historical_seed_entry(run_dir / "historical_seed", seed_manifest))
     for manifest_path in sorted(root.glob("*/scoreline_diagnostics/*/scoreline_diagnostics_manifest.json"), key=lambda p: str(p), reverse=True):
         entries.append(_scoreline_diagnostics_entry(manifest_path.parent, manifest_path))
+    for run_dir in sorted(root.glob("*/xg_formula_audit"), key=lambda p: str(p), reverse=True):
+        if (run_dir / "xg_formula_audit_summary.md").exists():
+            entries.append(_xg_formula_audit_entry(run_dir))
     return entries
 
 

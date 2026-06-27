@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.analysis.baseline_tuning import project_candidate_xg
 from src.analysis.scoreline_calibration import scoreline_rankings
 
 
@@ -324,6 +325,7 @@ def grade_current_projections(
     source_cache_dir: str | Path = "data/source_cache/current_international",
     output_dir: str | Path = "outputs/grading",
     min_matches: int = 1,
+    candidate_config: str | Path | None = None,
 ) -> dict[str, Any]:
     created_at = _now_iso()
     run_id = _run_id(as_of_date, created_at)
@@ -352,6 +354,13 @@ def grade_current_projections(
         else pd.DataFrame(columns=["miss_type", "matches"])
     )
     miss_types.to_csv(paths["scoreline_miss_types"], index=False)
+    candidate_comparison = _write_candidate_grading_comparison(
+        run_dir,
+        projections=projections,
+        actuals=actual_result["rows"],
+        candidate_config=candidate_config,
+        min_matches=min_matches,
+    )
     status = grade["status"]
     if projection_status != "loaded":
         status = projection_status
@@ -367,6 +376,8 @@ def grade_current_projections(
         "actual_result_source": actual_result.get("source", ""),
         "allow_network": allow_network,
         "manual_results_used": bool(actual_results),
+        "candidate_config": str(candidate_config or ""),
+        "candidate_grading_comparison": candidate_comparison,
         "metrics": grade["summary"],
         "guardrails": {
             "fake_results_used": False,
@@ -447,6 +458,89 @@ def format_grading_terminal(result: dict[str, Any]) -> str:
         f"Total goals MAE: {metrics.get('total_goals_mae')}",
         f"O/U 2.5 Brier: {metrics.get('over_2_5_brier_score')}",
         f"BTTS Brier: {metrics.get('btts_brier_score')}",
+        f"Candidate grading comparison: {result['manifest'].get('candidate_grading_comparison', {}).get('status')}",
         f"Summary: {result['paths']['summary']}",
     ])
+
+
+def _write_candidate_grading_comparison(
+    run_dir: Path,
+    *,
+    projections: pd.DataFrame,
+    actuals: pd.DataFrame,
+    candidate_config: str | Path | None,
+    min_matches: int,
+) -> dict[str, Any]:
+    if not candidate_config:
+        return {"status": "not_requested", "paths": {}}
+    path = Path(candidate_config)
+    if not path.exists():
+        return {"status": "blocked_missing_candidate_config", "paths": {}, "warning": str(path)}
+    if projections.empty or actuals.empty:
+        return {"status": "blocked_missing_projection_or_actual_rows", "paths": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"status": "blocked_invalid_candidate_config", "paths": {}, "warning": str(exc)}
+    params = payload.get("model_parameters") or {}
+    candidate_rows = []
+    for _, row in projections.iterrows():
+        if pd.isna(row.get("home_rating")) or pd.isna(row.get("away_rating")):
+            continue
+        candidate = project_candidate_xg(float(row["home_rating"]), float(row["away_rating"]), params)
+        out = row.copy()
+        out["team_a_xg_final"] = candidate["home_xg"]
+        out["team_b_xg_final"] = candidate["away_xg"]
+        out["projected_total"] = candidate["projected_total"]
+        out["most_likely_score"] = candidate["most_likely_score"]
+        out["team_a_win_prob"] = candidate["home_win_prob"]
+        out["draw_prob"] = candidate["draw_prob"]
+        out["team_b_win_prob"] = candidate["away_win_prob"]
+        out["over_2_5_prob"] = candidate.get("over_2_5_prob")
+        out["btts_prob"] = candidate.get("btts_prob")
+        candidate_rows.append(out)
+    if not candidate_rows:
+        return {"status": "blocked_no_candidate_projection_rows", "paths": {}}
+    baseline_grade = grade_projection_rows(projections, actuals, min_matches=min_matches)
+    candidate_grade = grade_projection_rows(pd.DataFrame(candidate_rows), actuals, min_matches=min_matches)
+    comparison_dir = run_dir / "candidate_grading_comparison"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+    baseline_metrics = baseline_grade["summary"]
+    candidate_metrics = candidate_grade["summary"]
+    comparison = pd.DataFrame([{
+        "metric": key,
+        "baseline": baseline_metrics.get(key),
+        "candidate": candidate_metrics.get(key),
+        "delta": _metric_delta(candidate_metrics.get(key), baseline_metrics.get(key)),
+    } for key in sorted(set(baseline_metrics) | set(candidate_metrics))])
+    csv_path = comparison_dir / "candidate_grading_comparison.csv"
+    summary_path = comparison_dir / "candidate_grading_comparison_summary.md"
+    comparison.to_csv(csv_path, index=False)
+    lines = [
+        "# Candidate Grading Comparison",
+        "",
+        "- Diagnostic only; production defaults are unchanged.",
+        f"- Candidate config: `{path}`",
+        f"- Baseline graded matches: `{baseline_metrics.get('graded_matches')}`",
+        f"- Candidate graded matches: `{candidate_metrics.get('graded_matches')}`",
+        f"- Total goals MAE delta: `{_metric_delta(candidate_metrics.get('total_goals_mae'), baseline_metrics.get('total_goals_mae'))}`",
+        f"- W/D/L accuracy delta: `{_metric_delta(candidate_metrics.get('wdl_accuracy'), baseline_metrics.get('wdl_accuracy'))}`",
+    ]
+    summary_path.write_text("\n".join(lines), encoding="utf-8")
+    return {
+        "status": "written",
+        "paths": {
+            "candidate_grading_comparison": str(csv_path),
+            "candidate_grading_comparison_summary": str(summary_path),
+        },
+        "baseline_metrics": baseline_metrics,
+        "candidate_metrics": candidate_metrics,
+    }
+
+
+def _metric_delta(candidate: Any, baseline: Any) -> float | None:
+    try:
+        return float(candidate) - float(baseline)
+    except (TypeError, ValueError):
+        return None
 

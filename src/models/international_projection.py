@@ -77,8 +77,8 @@ def _baseline_xg(team_a: pd.Series, team_b: pd.Series, neutral_site: str) -> tup
     b_def = float(team_b.get("defense_rating", league_avg))
     a_adj = float(team_a.get("opponent_adjusted_rating", 0.0)) * 0.08
     b_adj = float(team_b.get("opponent_adjusted_rating", 0.0)) * 0.08
-    team_a_xg = max(0.15, 0.58 * a_attack + 0.42 * b_def + home_adv + a_adj)
-    team_b_xg = max(0.15, 0.58 * b_attack + 0.42 * a_def - home_adv / 2 + b_adj)
+    team_a_xg = max(0.05, 0.58 * a_attack + 0.42 * b_def + home_adv + a_adj)
+    team_b_xg = max(0.05, 0.58 * b_attack + 0.42 * a_def - home_adv / 2 + b_adj)
     return round(team_a_xg, 4), round(team_b_xg, 4), warnings
 
 

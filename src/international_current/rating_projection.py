@@ -59,6 +59,16 @@ def _wdl_probabilities(home_xg: float, away_xg: float) -> tuple[float, float, fl
     return round(home_win / total, 4), round(draw / total, 4), round(away_win / total, 4)
 
 
+def _safety_guard_xg(value: float, *, team_label: str) -> tuple[float, bool, str]:
+    if pd.isna(value):
+        return 1.0, True, f"{team_label} xG was missing/non-numeric; neutral fallback applied."
+    if value < 0.05:
+        return 0.05, True, f"{team_label} xG raised to broad non-negative safety guard 0.05."
+    if value > 5.0:
+        return 5.0, True, f"{team_label} xG lowered to broad sanity guard 5.00."
+    return value, False, ""
+
+
 def data_support_for_rating_projection(
     fixture: CurrentInternationalFixture | None,
     home_rating: CurrentInternationalTeamRating | None,
@@ -116,11 +126,17 @@ def project_from_fixture_and_ratings(
         warnings.append("Confidence is capped because fixture/rating support is incomplete or manual-only.")
     home_value = float(home_rating.rating_value) if home_rating and home_rating.rating_value is not None else 1800.0
     away_value = float(away_rating.rating_value) if away_rating and away_rating.rating_value is not None else 1800.0
-    diff = max(-350.0, min(350.0, home_value - away_value))
-    total = max(1.6, min(3.2, base_total + abs(diff) / 900.0 * 0.18))
-    home_share = 0.5 + max(-0.18, min(0.18, diff / 900.0))
-    home_xg = round(max(0.35, total * home_share), 3)
-    away_xg = round(max(0.35, total * (1 - home_share)), 3)
+    diff = home_value - away_value
+    total = base_total + math.log1p(abs(diff)) / math.log1p(900.0) * 0.32
+    home_share = 0.5 + 0.28 * math.tanh(diff / 900.0)
+    raw_home_xg = total * home_share
+    raw_away_xg = total * (1 - home_share)
+    home_guarded, home_guard, home_guard_reason = _safety_guard_xg(raw_home_xg, team_label="home")
+    away_guarded, away_guard, away_guard_reason = _safety_guard_xg(raw_away_xg, team_label="away")
+    home_xg = round(home_guarded, 3)
+    away_xg = round(away_guarded, 3)
+    xg_safety_guard_applied = bool(home_guard or away_guard)
+    xg_safety_guard_reason = " | ".join(reason for reason in [home_guard_reason, away_guard_reason] if reason)
     home_win, draw, away_win = _wdl_probabilities(home_xg, away_xg)
     confidence_score = 48 if support == "medium_current_fixture_rating" else 34 if support == "low_manual_fixture_rating" else 28 if support == "low_fixture_only" else 15
     return {
@@ -132,6 +148,8 @@ def project_from_fixture_and_ratings(
         "projected_home_xg": home_xg,
         "projected_away_xg": away_xg,
         "projected_total": round(home_xg + away_xg, 3),
+        "xg_safety_guard_applied": xg_safety_guard_applied,
+        "xg_safety_guard_reason": xg_safety_guard_reason,
         "home_win_probability": home_win,
         "draw_probability": draw,
         "away_win_probability": away_win,

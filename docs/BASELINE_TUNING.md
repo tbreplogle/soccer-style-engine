@@ -13,10 +13,15 @@ The tuning grid can vary:
 - total goals adjustment
 - favorite xG spread multiplier
 - underdog xG floor
+- underdog xG scale
+- home or neutral adjustment
+- scoreline dispersion multiplier
 
 Every candidate is evaluated against completed rows with measurable results. Candidates are labeled conservatively, including `keep_current_baseline`, `candidate_improves_wdl`, `candidate_improves_totals`, `candidate_balanced_improvement`, `candidate_overfits_or_unstable`, `needs_holdout_validation`, and related total-goals warnings.
 
-Phase 35 also records scoreline/totals labels such as `balanced_improvement`, `totals_improved_wdl_stable`, `totals_improved_wdl_hurt`, `scoreline_spread_improved`, `overfit_risk`, `keep_current_baseline`, `needs_holdout_validation`, and `limited_holdout_confidence`.
+Phase 35 and 36 also record scoreline/totals labels such as `balanced_improvement`, `totals_improved_wdl_stable`, `totals_improved_wdl_hurt`, `scoreline_spread_improved`, `favorites_uncapped_improved`, `overfit_risk`, `keep_current_baseline`, `needs_holdout_validation`, and `limited_holdout_confidence`.
+
+The diagnostic grid can test underdog floors, but it includes zero/no-floor candidates and does not turn candidate floors into production defaults.
 
 For club calibration, tuning uses measured prior-result strength indexes from the historical goal-history baseline. Those are not external ratings and must not be described as true team ratings or style inputs.
 
@@ -94,3 +99,13 @@ Candidate preview outputs are written under the current international run:
 Candidate configs are preview artifacts only. They do not replace production defaults, do not add style-aware adjustments, do not use current StatsBomb live data, and do not produce betting recommendations.
 
 Use holdout validation before treating any candidate as more than a diagnostic signal.
+
+## xG Formula Audit
+
+Run:
+
+```bash
+python -m src.cli audit-xg-formula --as-of-date 2026-06-26
+```
+
+The audit writes `outputs/calibration/YYYY-MM-DD/xg_formula_audit/` and lists formula bounds, whether each is production or diagnostic logic, and the recommended action.

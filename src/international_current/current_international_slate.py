@@ -117,6 +117,8 @@ PROJECTION_COLUMNS = [
     "team_a_xg_final",
     "team_b_xg_final",
     "projected_total",
+    "xg_safety_guard_applied",
+    "xg_safety_guard_reason",
     "most_likely_score",
     "team_a_win_prob",
     "draw_prob",
@@ -844,6 +846,7 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
         candidate = project_candidate_xg(float(row["home_rating"]), float(row["away_rating"]), params)
         baseline_home_prob = float(row.get("team_a_win_prob", 0.0) or 0.0)
         baseline_over_2_5 = _over_2_5_probability(float(row.get("team_a_xg_final", 0.0)), float(row.get("team_b_xg_final", 0.0)))
+        baseline_btts = _btts_probability(float(row.get("team_a_xg_final", 0.0)), float(row.get("team_b_xg_final", 0.0)))
         candidate_home_prob = float(candidate["home_win_prob"])
         rows.append({
             "team_a": row.get("team_a", ""),
@@ -870,6 +873,9 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
             "baseline_over_2_5_probability": baseline_over_2_5,
             "candidate_over_2_5_probability": candidate.get("over_2_5_prob", ""),
             "delta_over_2_5_probability": round(float(candidate.get("over_2_5_prob", 0.0)) - baseline_over_2_5, 4),
+            "baseline_btts_probability": baseline_btts,
+            "candidate_btts_probability": candidate.get("btts_prob", ""),
+            "delta_btts_probability": round(float(candidate.get("btts_prob", 0.0)) - baseline_btts, 4),
             "baseline_most_likely_score": row.get("most_likely_score"),
             "candidate_most_likely_score": candidate["most_likely_score"],
             "baseline_top_correct_scores": _top_correct_scores(float(row.get("team_a_xg_final", 0.0)), float(row.get("team_b_xg_final", 0.0))),
@@ -880,7 +886,8 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
     csv_path = preview_dir / "candidate_projection_comparison.csv"
     summary_path = preview_dir / "candidate_projection_comparison_summary.md"
     scoreline_csv_path = scoreline_preview_dir / "candidate_projection_comparison.csv"
-    scoreline_summary_path = scoreline_preview_dir / "candidate_projection_comparison_summary.md"
+    scoreline_summary_path = scoreline_preview_dir / "candidate_projection_summary.md"
+    scoreline_legacy_summary_path = scoreline_preview_dir / "candidate_projection_comparison_summary.md"
     frame.to_csv(csv_path, index=False)
     frame.to_csv(scoreline_csv_path, index=False)
     lines = [
@@ -895,7 +902,7 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
         *(_markdown_table(frame.head(20))),
     ]
     summary_path.write_text("\n".join(lines), encoding="utf-8")
-    scoreline_summary_path.write_text("\n".join([
+    scoreline_summary = "\n".join([
         "# Scoreline Candidate Preview",
         "",
         "- Diagnostic-only baseline scoreline/totals candidate comparison.",
@@ -906,7 +913,9 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
         "## Comparison",
         "",
         *(_markdown_table(frame.head(20))),
-    ]), encoding="utf-8")
+    ])
+    scoreline_summary_path.write_text(scoreline_summary, encoding="utf-8")
+    scoreline_legacy_summary_path.write_text(scoreline_summary, encoding="utf-8")
     return {
         "status": "written",
         "candidate_config": str(config_path),
@@ -914,7 +923,8 @@ def _write_candidate_projection_preview(run_dir: Path, projections: pd.DataFrame
             "candidate_projection_comparison": str(csv_path),
             "candidate_projection_comparison_summary": str(summary_path),
             "scoreline_candidate_projection_comparison": str(scoreline_csv_path),
-            "scoreline_candidate_projection_comparison_summary": str(scoreline_summary_path),
+            "scoreline_candidate_projection_summary": str(scoreline_summary_path),
+            "scoreline_candidate_projection_comparison_summary": str(scoreline_legacy_summary_path),
         },
         "warning": warning,
         "rows": int(len(frame)),
@@ -931,6 +941,11 @@ def _over_2_5_probability(home_xg: float, away_xg: float) -> float:
     dist = score_distribution(max(0.0, home_xg), max(0.0, away_xg), max_goals=8)
     total = dist["home_goals"] + dist["away_goals"]
     return float(dist.loc[total > 2.5, "probability"].sum())
+
+
+def _btts_probability(home_xg: float, away_xg: float) -> float:
+    dist = score_distribution(max(0.0, home_xg), max(0.0, away_xg), max_goals=8)
+    return float(dist.loc[(dist["home_goals"] > 0) & (dist["away_goals"] > 0), "probability"].sum())
 
 
 def project_current_international(
@@ -1038,6 +1053,8 @@ def project_current_international(
             "team_a_xg_final": baseline["projected_home_xg"],
             "team_b_xg_final": baseline["projected_away_xg"],
             "projected_total": baseline["projected_total"],
+            "xg_safety_guard_applied": baseline.get("xg_safety_guard_applied", False),
+            "xg_safety_guard_reason": baseline.get("xg_safety_guard_reason", ""),
             "most_likely_score": baseline["most_likely_score"],
             "team_a_win_prob": baseline["home_win_probability"],
             "draw_prob": baseline["draw_probability"],
